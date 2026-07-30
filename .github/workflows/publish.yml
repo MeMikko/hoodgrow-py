@@ -1,0 +1,32 @@
+name: Publish to PyPI
+
+# Fires when a GitHub Release is published (Releases -> Draft a new
+# release -> tag e.g. v0.1.0 -> Publish release) — doable entirely from a
+# phone browser or the GitHub app, no local CLI needed.
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Must match the "Environment name" set on the pending publisher at
+    # pypi.org -> Your projects -> Publishing -> Add a new pending
+    # publisher (PyPI project name "hoodgrow", owner "MeMikko", repo
+    # "hoodgrow-py", workflow "publish.yml", environment "pypi"). PyPI
+    # trusted publishing (unlike npm's) works for a project's very first
+    # release — no token to create or store at all.
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install build
+      - run: python -m build
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
