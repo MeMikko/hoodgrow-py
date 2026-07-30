@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hoodgrow"
+version = "0.1.0"
+description = "Python SDK for the HoodGrow Robinhood Chain stock token API — live price, corporate-action adjusted supply, DeFi depth (Morpho/Uniswap), and corporate actions. Pay per call via x402 (USDC on Base) or a bearer API key."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "HoodGrow" }]
+keywords = [
+  "hoodgrow",
+  "x402",
+  "robinhood-chain",
+  "stock-tokens",
+  "tokenized-equities",
+  "defi",
+  "morpho",
+  "uniswap",
+  "agent",
+  "ai-agent",
+  "langchain",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Office/Business :: Financial",
+]
+dependencies = [
+  "requests>=2.31.0",
+  "pydantic>=2.0.0",
+  "x402[requests,evm]>=2.17.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0", "responses>=0.25.0"]
+
+[project.urls]
+Homepage = "https://www.hoodgrow.com"
+Documentation = "https://www.hoodgrow.com/api-access"
+Repository = "https://github.com/MeMikko/hoodgrow-py"
+Issues = "https://github.com/MeMikko/hoodgrow-py/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hoodgrow"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
