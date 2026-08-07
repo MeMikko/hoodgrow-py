@@ -24,7 +24,7 @@ signer = Account.from_key(os.environ["AGENT_PRIVATE_KEY"])
 
 client = HoodGrowClient(signer=signer)
 
-catalog = client.get_catalog()   # $0.50 — every token
+catalog = client.get_catalog()   # $0.10 — every token
 nvda = client.get_token("NVDA")  # $0.05 — one token
 ```
 
@@ -55,7 +55,7 @@ Exactly one of `api_key` / `signer` is required.
 
 | Method | Price (x402) | Returns |
 | --- | --- | --- |
-| `get_catalog()` | $0.50 | Every listed token: price, source, 24h change, corporate-action adjusted supply, DeFi depth, plus catalog-wide pending/recent corporate actions |
+| `get_catalog()` | $0.10 | Every listed token: price, source, 24h change, corporate-action adjusted supply, DeFi depth, plus catalog-wide pending/recent corporate actions |
 | `get_token(symbol)` | $0.05 | One token, same fields, scoped |
 | `get_corporate_actions(symbol=None)` | uses `get_token`/`get_catalog` above | `CorporateActions(pending=..., recent=...)` — pass a symbol to scope, omit for every tracked token |
 
@@ -79,7 +79,7 @@ out request can pay twice. Before pointing a signer at this client:
   `Account.from_key(...)`) that can sign locally.
 - HoodGrow's paywall only ever asks for USDC (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`)
   on Base mainnet (`eip155:8453`), paid to
-  `0x8520B3693a2Cf3c2bEa3a505Af3A9c1b093954c7`, capped at $0.50/call — this
+  `0x8520B3693a2Cf3c2bEa3a505Af3A9c1b093954c7`, capped at $0.10/call — this
   client's underlying `x402` dependency handles the protocol-level
   verification, but you're responsible for how much you fund the signing
   wallet with.

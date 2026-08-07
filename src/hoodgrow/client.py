@@ -44,7 +44,7 @@ class HoodGrowClient:
             signer: An ``eth_account`` ``LocalAccount`` (e.g. from
                 ``eth_account.Account.from_key``, or a KMS/HSM-backed
                 custom account) used to auto-pay per call via x402 — USDC
-                on Base, $0.50 for the full catalog, $0.05 for a single
+                on Base, $0.10 for the full catalog, $0.05 for a single
                 token. Every payment this client makes is real money;
                 never hardcode a raw private key in source, load it from
                 an environment variable or secret manager, and only fund
@@ -92,7 +92,7 @@ class HoodGrowClient:
     def get_catalog(self) -> CatalogResponse:
         """The full token catalog — every listed Robinhood Chain stock
         token, with price, corporate-action adjusted supply, and DeFi
-        depth. $0.50/call via x402, free with an API key."""
+        depth. $0.10/call via x402, free with an API key."""
         return CatalogResponse.model_validate(self._request("/api/agent/tokens"))
 
     def get_token(self, symbol: str) -> TokenDetailResponse:
