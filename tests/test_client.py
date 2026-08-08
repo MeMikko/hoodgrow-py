@@ -243,3 +243,70 @@ def test_get_slippage_builds_the_query_string_with_amount_usd_and_side():
     assert responses.calls[0].request.url == (
         f"{BASE}/api/agent/slippage/NVDA?amountUsd=10000&side=buy"
     )
+
+
+@responses.activate
+def test_get_ohlc_sends_only_interval_when_from_to_limit_are_omitted():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/ohlc/NVDA",
+        json={
+            "chainId": 4663,
+            "symbol": "NVDA",
+            "interval": "1h",
+            "from": "2026-07-09T00:00:00.000Z",
+            "to": "2026-08-08T00:00:00.000Z",
+            "updatedAt": "2026-08-08T00:00:00.000Z",
+            "candles": [],
+            "note": "OHLC only — no volume field; HoodGrow has no historical trading-volume time series.",
+        },
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123")
+    result = client.get_ohlc("nvda", "1h")
+
+    assert result.interval == "1h"
+    assert result.from_ == "2026-07-09T00:00:00.000Z"
+    assert responses.calls[0].request.url == f"{BASE}/api/agent/ohlc/NVDA?interval=1h"
+
+
+@responses.activate
+def test_get_ohlc_passes_from_to_and_limit_through_as_query_params():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/ohlc/NVDA",
+        json={
+            "chainId": 4663,
+            "symbol": "NVDA",
+            "interval": "1d",
+            "from": "2026-07-01T00:00:00.000Z",
+            "to": "2026-08-01T00:00:00.000Z",
+            "updatedAt": "2026-08-08T00:00:00.000Z",
+            "candles": [
+                {
+                    "bucketStart": "2026-07-01T00:00:00.000Z",
+                    "bucketEndExclusive": "2026-07-02T00:00:00.000Z",
+                    "open": 180.1,
+                    "high": 182.5,
+                    "low": 179.0,
+                    "close": 181.2,
+                    "sampleCount": 96,
+                }
+            ],
+            "note": "OHLC only — no volume field; HoodGrow has no historical trading-volume time series.",
+        },
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123")
+    result = client.get_ohlc(
+        "nvda", "1d", from_="2026-07-01T00:00:00.000Z", to="2026-08-01T00:00:00.000Z", limit=30
+    )
+
+    assert len(result.candles) == 1
+    assert result.candles[0].sample_count == 96
+    assert responses.calls[0].request.url == (
+        f"{BASE}/api/agent/ohlc/NVDA?interval=1d&from=2026-07-01T00%3A00%3A00.000Z"
+        "&to=2026-08-01T00%3A00%3A00.000Z&limit=30"
+    )

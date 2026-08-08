@@ -13,6 +13,9 @@ from .models import (
     DefiMarket,
     DefiPool,
     HoldersResponse,
+    OhlcCandle,
+    OhlcInterval,
+    OhlcResponse,
     PendingCorporateAction,
     RecentCorporateAction,
     SlippagePoolResult,
@@ -26,7 +29,7 @@ from .models import (
     TopHolders,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "HoodGrowClient",
@@ -38,6 +41,9 @@ __all__ = [
     "DefiMarket",
     "DefiPool",
     "HoldersResponse",
+    "OhlcCandle",
+    "OhlcInterval",
+    "OhlcResponse",
     "PendingCorporateAction",
     "RecentCorporateAction",
     "SlippagePoolResult",

@@ -264,3 +264,34 @@ class SlippageResponse(_HoodGrowModel):
     best_effective_price: float | None = Field(None, alias="bestEffectivePrice")
     pools: list[SlippagePoolResult]
     note: str
+
+
+OhlcInterval = Literal["1h", "4h", "1d"]
+
+
+class OhlcCandle(_HoodGrowModel):
+    bucket_start: str = Field(alias="bucketStart")
+    bucket_end_exclusive: str = Field(alias="bucketEndExclusive")
+    open: float
+    high: float
+    low: float
+    close: float
+    #: How many raw ~15-min price snapshots contributed to this candle — a
+    #: low count (e.g. 1) means a thinner spread, not a data error.
+    sample_count: int = Field(alias="sampleCount")
+
+
+class OhlcResponse(_HoodGrowModel):
+    """``GET /api/agent/ohlc/{symbol}`` — OHLC price candles for
+    backtesting. Deliberately OHLC, not OHLCV: HoodGrow has no historical
+    trading-volume time series to draw a volume field from, so none is
+    included."""
+
+    chain_id: int = Field(alias="chainId")
+    symbol: str
+    interval: OhlcInterval
+    from_: str = Field(alias="from")
+    to: str
+    updated_at: str = Field(alias="updatedAt")
+    candles: list[OhlcCandle]
+    note: str

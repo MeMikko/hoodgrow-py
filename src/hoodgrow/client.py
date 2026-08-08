@@ -12,6 +12,8 @@ from .models import (
     CorporateActions,
     DefiDetailResponse,
     HoldersResponse,
+    OhlcInterval,
+    OhlcResponse,
     SlippageResponse,
     SlippageSide,
     TokenDetailResponse,
@@ -161,4 +163,30 @@ class HoodGrowClient:
                 f"/api/agent/slippage/{quote(symbol.upper())}",
                 params={"amountUsd": amount_usd, "side": side},
             )
+        )
+
+    def get_ohlc(
+        self,
+        symbol: str,
+        interval: OhlcInterval,
+        from_: str | None = None,
+        to: str | None = None,
+        limit: int | None = None,
+    ) -> OhlcResponse:
+        """OHLC price candles for backtesting, bucketed from ~15-min price
+        snapshots. Deliberately OHLC, not OHLCV — HoodGrow has no historical
+        trading-volume time series to draw a volume field from. ``from_``/
+        ``to`` are ISO 8601 timestamps (default: the last 30 days); ``limit``
+        caps how many candles to return (server default 500, max 1000).
+        $0.05/call via x402, free with an API key. Raises
+        :class:`HoodGrowError` (status 404) for an unknown symbol."""
+        params: dict[str, Any] = {"interval": interval}
+        if from_ is not None:
+            params["from"] = from_
+        if to is not None:
+            params["to"] = to
+        if limit is not None:
+            params["limit"] = limit
+        return OhlcResponse.model_validate(
+            self._request(f"/api/agent/ohlc/{quote(symbol.upper())}", params=params)
         )

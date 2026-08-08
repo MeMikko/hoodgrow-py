@@ -61,14 +61,15 @@ Exactly one of `api_key` / `signer` is required.
 | `get_defi(symbol)` | $0.05 | Every Morpho market this token participates in (loan OR collateral role) plus its Uniswap V3 pools — not just the single best-APY figure bundled into `get_catalog`/`get_token` |
 | `get_holders(symbol, limit=None)` | $0.05 | Holder-count trend, 24h net supply change (real mint/burn), and top-holder concentration (`limit` caps how many holders to return, 1-50, defaults to 10 server-side) |
 | `get_slippage(symbol, amount_usd, side)` | $0.05 | How much a USD-sized trade (`side: "buy" \| "sell"`) would move the price, per Uniswap V3 pool — `best_pool_address`/`best_effective_price` pick the best one for you |
+| `get_ohlc(symbol, interval, from_=None, to=None, limit=None)` | $0.05 | OHLC price candles for backtesting (`interval: "1h" \| "4h" \| "1d"`; `from_`/`to` are ISO 8601 strings, default to the last 30 days). **OHLC only, no volume** — HoodGrow has no historical trading-volume time series to draw a volume field from |
 
 Full response shapes are [Pydantic](https://docs.pydantic.dev) models
 (`CatalogResponse`, `TokenDetailResponse`, `TokenSummary`, `DefiInfo`,
 `PendingCorporateAction`, `RecentCorporateAction`, `DefiDetailResponse`,
 `DefiMarket`, `DefiPool`, `HoldersResponse`, `TopHolder`, `SupplyChange24h`,
-`SlippageResponse`, `SlippagePoolResult`) — attributes are idiomatic
-`snake_case`; the API's own `camelCase` JSON keys also work if you
-construct a model directly.
+`SlippageResponse`, `SlippagePoolResult`, `OhlcResponse`, `OhlcCandle`,
+`OhlcInterval`) — attributes are idiomatic `snake_case`; the API's own
+`camelCase` JSON keys also work if you construct a model directly.
 
 A failed request (any non-2xx HoodGrow itself returns, after x402 payment
 handling — an unknown symbol, a server error) raises `HoodGrowError` with
