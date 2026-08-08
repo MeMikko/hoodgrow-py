@@ -295,3 +295,34 @@ class OhlcResponse(_HoodGrowModel):
     updated_at: str = Field(alias="updatedAt")
     candles: list[OhlcCandle]
     note: str
+
+
+BaseTokenStatus = Literal["pre_launch", "live"]
+
+
+class BaseToken(_HoodGrowModel):
+    """One Base (chain 8453) B20 native-equity token. ``status`` flips
+    from ``"pre_launch"`` to ``"live"`` automatically once real supply
+    appears on-chain — a ``"pre_launch"`` entry is not tradable: no price,
+    no DEX liquidity, no holders exist for it yet."""
+
+    symbol: str
+    name: str
+    address: str
+    decimals: int
+    status: BaseTokenStatus
+    total_supply_raw: str = Field(alias="totalSupplyRaw")
+    total_supply: float = Field(alias="totalSupply")
+    checked_at: str | None = Field(None, alias="checkedAt")
+
+
+class BaseTokensResponse(_HoodGrowModel):
+    """``GET /api/agent/base/tokens`` — Base mainnet B20 native-equity-
+    token registry, a much smaller sibling of :class:`CatalogResponse`
+    (Robinhood Chain). See ``note`` and each token's ``status`` before
+    treating any entry as tradable."""
+
+    chain_id: int = Field(alias="chainId")
+    updated_at: str = Field(alias="updatedAt")
+    note: str
+    tokens: list[BaseToken]

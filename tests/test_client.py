@@ -310,3 +310,37 @@ def test_get_ohlc_passes_from_to_and_limit_through_as_query_params():
         f"{BASE}/api/agent/ohlc/NVDA?interval=1d&from=2026-07-01T00%3A00%3A00.000Z"
         "&to=2026-08-01T00%3A00%3A00.000Z&limit=30"
     )
+
+
+@responses.activate
+def test_get_base_tokens_hits_the_base_registry_endpoint():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/base/tokens",
+        json={
+            "chainId": 8453,
+            "updatedAt": "2026-08-08T12:00:00.000Z",
+            "note": "PRE-LAUNCH: ...",
+            "tokens": [
+                {
+                    "symbol": "AAPL",
+                    "name": "Apple Inc.",
+                    "address": "0xb200000000000000000000C2e324d24d7eEcd1fb",
+                    "decimals": 8,
+                    "status": "pre_launch",
+                    "totalSupplyRaw": "0",
+                    "totalSupply": 0,
+                    "checkedAt": "2026-08-08T12:00:00.000Z",
+                }
+            ],
+        },
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123")
+    result = client.get_base_tokens()
+
+    assert result.chain_id == 8453
+    assert len(result.tokens) == 1
+    assert result.tokens[0].status == "pre_launch"
+    assert responses.calls[0].request.url == f"{BASE}/api/agent/base/tokens"

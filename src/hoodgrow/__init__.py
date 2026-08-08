@@ -6,6 +6,9 @@ https://github.com/MeMikko/hoodgrow-py#readme.
 
 from .client import HoodGrowClient, HoodGrowError
 from .models import (
+    BaseToken,
+    BaseTokensResponse,
+    BaseTokenStatus,
     CatalogResponse,
     CorporateActions,
     DefiDetailResponse,
@@ -29,11 +32,14 @@ from .models import (
     TopHolders,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "HoodGrowClient",
     "HoodGrowError",
+    "BaseToken",
+    "BaseTokensResponse",
+    "BaseTokenStatus",
     "CatalogResponse",
     "CorporateActions",
     "DefiDetailResponse",

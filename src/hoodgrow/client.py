@@ -8,6 +8,7 @@ from urllib.parse import quote
 import requests
 
 from .models import (
+    BaseTokensResponse,
     CatalogResponse,
     CorporateActions,
     DefiDetailResponse,
@@ -190,3 +191,13 @@ class HoodGrowClient:
         return OhlcResponse.model_validate(
             self._request(f"/api/agent/ohlc/{quote(symbol.upper())}", params=params)
         )
+
+    def get_base_tokens(self) -> BaseTokensResponse:
+        """Base mainnet (chain 8453) B20 native-equity-token registry — a
+        much smaller sibling of :meth:`get_catalog`. PRE-LAUNCH: check
+        each token's ``status`` before treating it as tradable —
+        ``"pre_launch"`` means verified on-chain metadata but zero minted
+        supply, so no price, no DEX liquidity, no holders exist for it
+        yet; it flips to ``"live"`` automatically once real supply
+        appears on-chain. $0.05/call via x402, free with an API key."""
+        return BaseTokensResponse.model_validate(self._request("/api/agent/base/tokens"))
