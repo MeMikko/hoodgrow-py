@@ -158,3 +158,88 @@ def test_base_url_override_is_respected():
     client.get_catalog()
 
     assert responses.calls[0].request.url == "http://localhost:3000/api/agent/tokens"
+
+
+@responses.activate
+def test_get_defi_upper_cases_the_symbol_and_hits_the_defi_endpoint():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/defi/NVDA",
+        json={
+            "chainId": 4663,
+            "symbol": "NVDA",
+            "updatedAt": "2026-08-08T00:00:00.000Z",
+            "morphoMarkets": [
+                {
+                    "marketId": "0xabc",
+                    "role": "collateral",
+                    "counterpartSymbol": "USDG",
+                    "supplyApy": 0.0482,
+                    "borrowApy": 0.061,
+                    "tvlUsd": 1284000,
+                    "ts": "2026-08-08T00:00:00.000Z",
+                }
+            ],
+            "uniswapPools": [],
+        },
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123")
+    result = client.get_defi("nvda")
+
+    assert len(result.morpho_markets) == 1
+    assert result.morpho_markets[0].role == "collateral"
+
+
+@responses.activate
+def test_get_holders_omits_limit_when_not_passed_includes_when_passed():
+    body = {
+        "chainId": 4663,
+        "symbol": "NVDA",
+        "updatedAt": "2026-08-08T00:00:00.000Z",
+        "holderCount": 1342,
+        "holderCountDelta": 12,
+        "holderCountDeltaSinceTs": "2026-08-07T00:00:00.000Z",
+        "holderSnapshotTs": "2026-08-08T00:00:00.000Z",
+        "supplyChange24h": None,
+        "topHolders": {"snapshotTs": "2026-08-08T00:00:00.000Z", "totalHolders": 1342, "holders": []},
+    }
+    responses.add(responses.GET, f"{BASE}/api/agent/holders/NVDA", json=body, status=200)
+    responses.add(responses.GET, f"{BASE}/api/agent/holders/NVDA", json=body, status=200)
+
+    client = HoodGrowClient(api_key="test-key-123")
+    result = client.get_holders("nvda")
+    client.get_holders("nvda", limit=25)
+
+    assert result.holder_count == 1342
+    assert responses.calls[0].request.url == f"{BASE}/api/agent/holders/NVDA"
+    assert responses.calls[1].request.url == f"{BASE}/api/agent/holders/NVDA?limit=25"
+
+
+@responses.activate
+def test_get_slippage_builds_the_query_string_with_amount_usd_and_side():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/slippage/NVDA",
+        json={
+            "chainId": 4663,
+            "symbol": "NVDA",
+            "side": "buy",
+            "amountUsd": 10000,
+            "updatedAt": "2026-08-08T00:00:00.000Z",
+            "bestPoolAddress": "0xpool",
+            "bestEffectivePrice": 185.68,
+            "pools": [],
+            "note": "Per-pool estimate, not an optimal multi-pool route/split.",
+        },
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123")
+    result = client.get_slippage("nvda", 10000, "buy")
+
+    assert result.best_pool_address == "0xpool"
+    assert responses.calls[0].request.url == (
+        f"{BASE}/api/agent/slippage/NVDA?amountUsd=10000&side=buy"
+    )

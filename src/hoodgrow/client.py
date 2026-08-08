@@ -7,7 +7,15 @@ from urllib.parse import quote
 
 import requests
 
-from .models import CatalogResponse, CorporateActions, TokenDetailResponse
+from .models import (
+    CatalogResponse,
+    CorporateActions,
+    DefiDetailResponse,
+    HoldersResponse,
+    SlippageResponse,
+    SlippageSide,
+    TokenDetailResponse,
+)
 
 DEFAULT_BASE_URL = "https://www.hoodgrow.com"
 #: Base mainnet, CAIP-2 form — the only network HoodGrow's x402 paywall accepts.
@@ -74,8 +82,8 @@ class HoodGrowClient:
                 "see https://github.com/MeMikko/hoodgrow-py#readme"
             )
 
-    def _request(self, path: str) -> dict[str, Any]:
-        res = self._session.get(f"{self._base_url}{path}")
+    def _request(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        res = self._session.get(f"{self._base_url}{path}", params=params)
         if not res.ok:
             body: Any = None
             try:
@@ -113,4 +121,44 @@ class HoodGrowClient:
         return CorporateActions(
             pending=data.pending_corporate_actions,
             recent=data.recent_corporate_actions,
+        )
+
+    def get_defi(self, symbol: str) -> DefiDetailResponse:
+        """Every Morpho market this token participates in (loan OR
+        collateral role) plus its Uniswap V3 pools — the full picture, not
+        just the single best-APY figure bundled into ``get_catalog``/
+        ``get_token``. $0.05/call via x402, free with an API key. Raises
+        :class:`HoodGrowError` (status 404) for an unknown symbol."""
+        return DefiDetailResponse.model_validate(
+            self._request(f"/api/agent/defi/{quote(symbol.upper())}")
+        )
+
+    def get_holders(self, symbol: str, limit: int | None = None) -> HoldersResponse:
+        """Holder-count trend, 24h net total_supply change (real mint/burn
+        — creation/redemption of the underlying tokenized shares, distinct
+        from a corporate-action multiplier change), and top-holder
+        concentration. ``limit`` caps how many top holders to return
+        (1-50; the server defaults to 10 if omitted). $0.05/call via x402,
+        free with an API key. Raises :class:`HoodGrowError` (status 404)
+        for an unknown symbol."""
+        params = {"limit": limit} if limit is not None else None
+        return HoldersResponse.model_validate(
+            self._request(f"/api/agent/holders/{quote(symbol.upper())}", params=params)
+        )
+
+    def get_slippage(
+        self, symbol: str, amount_usd: float, side: SlippageSide
+    ) -> SlippageResponse:
+        """Price-impact / slippage estimate for a USD-sized trade, per
+        Uniswap V3 pool this token trades on. ``side="buy"`` spends USDG
+        for the stock token; ``"sell"`` spends the stock token for USDG.
+        Per-pool, not an optimal multi-pool route/split — see the
+        response's ``note``. $0.05/call via x402, free with an API key.
+        Raises :class:`HoodGrowError` (status 404) for an unknown symbol.
+        """
+        return SlippageResponse.model_validate(
+            self._request(
+                f"/api/agent/slippage/{quote(symbol.upper())}",
+                params={"amountUsd": amount_usd, "side": side},
+            )
         )

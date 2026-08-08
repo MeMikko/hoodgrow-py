@@ -142,3 +142,125 @@ class CorporateActions(_HoodGrowModel):
 
     pending: list[PendingCorporateAction]
     recent: list[RecentCorporateAction]
+
+
+DefiMarketRole = Literal["loan", "collateral"]
+
+
+class DefiMarket(_HoodGrowModel):
+    """One Morpho market a token participates in — as the loan asset OR as
+    collateral (a token can appear in multiple markets in either role)."""
+
+    market_id: str = Field(alias="marketId")
+    role: DefiMarketRole
+    #: The OTHER asset in this market. ``None`` if that side's symbol was
+    #: never recorded server-side.
+    counterpart_symbol: str | None = Field(None, alias="counterpartSymbol")
+    #: Percent, e.g. 4.82 for 4.82%.
+    supply_apy: float | None = Field(None, alias="supplyApy")
+    borrow_apy: float | None = Field(None, alias="borrowApy")
+    tvl_usd: float | None = Field(None, alias="tvlUsd")
+    ts: str
+
+
+class DefiPool(_HoodGrowModel):
+    pool_address: str = Field(alias="poolAddress")
+    tvl_usd: float | None = Field(None, alias="tvlUsd")
+    volume_24h_usd: float | None = Field(None, alias="volume24hUsd")
+    #: Pips, e.g. 3000 = 0.3%.
+    fee_tier_bps: int | None = Field(None, alias="feeTierBps")
+    ts: str
+
+
+class DefiDetailResponse(_HoodGrowModel):
+    """``GET /api/agent/defi/{symbol}`` — every Morpho market and Uniswap
+    V3 pool a token participates in, not just the single best-APY figure
+    bundled into :class:`CatalogResponse`/:class:`TokenDetailResponse`'s
+    ``defi`` field."""
+
+    chain_id: int = Field(alias="chainId")
+    symbol: str
+    updated_at: str = Field(alias="updatedAt")
+    morpho_markets: list[DefiMarket] = Field(alias="morphoMarkets")
+    uniswap_pools: list[DefiPool] = Field(alias="uniswapPools")
+
+
+class TopHolder(_HoodGrowModel):
+    address: str
+    balance: float
+    #: Share of total supply, 0-100. ``None`` if total supply isn't known.
+    percent_of_supply: float | None = Field(None, alias="percentOfSupply")
+
+
+class SupplyChange24h(_HoodGrowModel):
+    """Net total_supply change over ~24h — a real mint/burn proxy
+    (creation/redemption of the underlying tokenized shares), distinct
+    from a corporate-action multiplier change."""
+
+    supply_now: float = Field(alias="supplyNow")
+    supply_ref: float = Field(alias="supplyRef")
+    change_percent: float = Field(alias="changePercent")
+    ref_ts: str = Field(alias="refTs")
+
+
+class TopHolders(_HoodGrowModel):
+    snapshot_ts: str | None = Field(None, alias="snapshotTs")
+    total_holders: int = Field(alias="totalHolders")
+    holders: list[TopHolder]
+
+
+class HoldersResponse(_HoodGrowModel):
+    """``GET /api/agent/holders/{symbol}`` — holder-count trend, 24h net
+    supply change, and top-holder concentration."""
+
+    chain_id: int = Field(alias="chainId")
+    symbol: str
+    updated_at: str = Field(alias="updatedAt")
+    holder_count: int | None = Field(None, alias="holderCount")
+    holder_count_delta: int | None = Field(None, alias="holderCountDelta")
+    holder_count_delta_since_ts: str | None = Field(None, alias="holderCountDeltaSinceTs")
+    holder_snapshot_ts: str | None = Field(None, alias="holderSnapshotTs")
+    supply_change_24h: SupplyChange24h | None = Field(None, alias="supplyChange24h")
+    top_holders: TopHolders = Field(alias="topHolders")
+
+
+SlippageSide = Literal["buy", "sell"]
+
+
+class SlippagePoolResult(_HoodGrowModel):
+    """One pool's price-impact estimate, OR an error explaining why that
+    pool couldn't be priced (``error`` set, all the numeric fields absent)
+    — never both."""
+
+    pool_address: str = Field(alias="poolAddress")
+    fee_tier: int | None = Field(None, alias="feeTier")
+    snapshot_ts: str = Field(alias="snapshotTs")
+    error: str | None = None
+    amount_out: float | None = Field(None, alias="amountOut")
+    fee_amount_usd: float | None = Field(None, alias="feeAmountUsd")
+    mid_price_before: float | None = Field(None, alias="midPriceBefore")
+    mid_price_after: float | None = Field(None, alias="midPriceAfter")
+    effective_price: float | None = Field(None, alias="effectivePrice")
+    price_impact_percent: float | None = Field(None, alias="priceImpactPercent")
+    #: ``None`` means "can't tell" (unrecognized fee tier); ``True`` means
+    #: this pool's estimate likely UNDERSTATES real slippage for this
+    #: trade size.
+    likely_crosses_tick: bool | None = Field(None, alias="likelyCrossesTick")
+
+
+class SlippageResponse(_HoodGrowModel):
+    """``GET /api/agent/slippage/{symbol}`` — how much a USD-sized trade
+    would move the price, per Uniswap V3 pool. Per-pool, not an optimal
+    multi-pool route/split — see ``note``."""
+
+    chain_id: int = Field(alias="chainId")
+    symbol: str
+    side: SlippageSide
+    amount_usd: float = Field(alias="amountUsd")
+    updated_at: str = Field(alias="updatedAt")
+    #: The pool with the lowest priceImpactPercent among the ones that
+    #: priced successfully. ``None`` if none did.
+    best_pool_address: str | None = Field(None, alias="bestPoolAddress")
+    best_effective_price: float | None = Field(None, alias="bestEffectivePrice")
+    pools: list[SlippagePoolResult]
+    note: str
