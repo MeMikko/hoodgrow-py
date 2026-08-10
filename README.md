@@ -45,10 +45,44 @@ catalog = client.get_catalog()
 Get a key from HoodGrow directly — see
 [hoodgrow.com/api-access](https://www.hoodgrow.com/api-access).
 
+## Quick start — prepaid credits (cheaper than x402 per call, still no signup)
+
+Buy a dollar-denominated credit balance once via x402, then spend it down
+over many calls with a cheap off-chain wallet signature instead of a fresh
+on-chain payment every time:
+
+```python
+import os
+from eth_account import Account
+from hoodgrow import HoodGrowClient
+
+signer = Account.from_key(os.environ["AGENT_PRIVATE_KEY"])
+
+# One-time: pay via x402 for a bundle. Bundle ids/prices: client.list_credit_bundles().
+paying_client = HoodGrowClient(signer=signer)
+paying_client.buy_credits("50")  # pay $50, receive $60 of credit
+
+# From then on: spend the balance instead of paying x402 per call.
+client = HoodGrowClient(signer=signer, use_credits=True)
+catalog = client.get_catalog()  # debits $0.10 from the balance, no on-chain tx
+
+balance = client.get_credit_balance()  # free, doesn't spend anything
+```
+
+A credit spend is a different mechanism from x402 entirely — a short,
+single-use, ~60-second-lived signed message, not an on-chain payment — so it
+costs no gas and settles instantly. It only ever authenticates against
+`www.hoodgrow.com`; nothing here signs a payment authorization.
+
 ## API
 
 ```python
-HoodGrowClient(api_key: str | None = None, signer: LocalAccount | None = None, base_url: str = "https://www.hoodgrow.com")
+HoodGrowClient(
+    api_key: str | None = None,
+    signer: LocalAccount | None = None,
+    base_url: str = "https://www.hoodgrow.com",
+    use_credits: bool = False,  # spend prepaid credit instead of x402 per call — requires signer + buy_credits() first
+)
 ```
 
 Exactly one of `api_key` / `signer` is required.
@@ -63,13 +97,17 @@ Exactly one of `api_key` / `signer` is required.
 | `get_slippage(symbol, amount_usd, side)` | $0.05 | How much a USD-sized trade (`side: "buy" \| "sell"`) would move the price, per Uniswap V3 pool — `best_pool_address`/`best_effective_price` pick the best one for you |
 | `get_ohlc(symbol, interval, from_=None, to=None, limit=None)` | $0.05 | OHLC price candles for backtesting (`interval: "1h" \| "4h" \| "1d"`; `from_`/`to` are ISO 8601 strings, default to the last 30 days). **OHLC only, no volume** — HoodGrow has no historical trading-volume time series to draw a volume field from |
 | `get_base_tokens()` | $0.05 | Base mainnet (chain 8453) B20 native-equity-token registry — a much smaller sibling of `get_catalog`. **Pre-launch**: check each token's `status` (`"pre_launch" \| "live"`) before treating it as tradable — `"pre_launch"` means no price, no DEX liquidity, no holders exist for it yet |
+| `list_credit_bundles()` | free | Current prepaid credit bundle catalog (`{id: CreditBundle(price_usd, credit_usd)}`) — no auth required |
+| `buy_credits(bundle_id)` | one x402 payment | Pays for one bundle; requires `signer`. Balance lands once settlement confirms — see `get_credit_balance()` |
+| `get_credit_balance()` | free | This wallet's current credit balance; requires `signer` |
 
 Full response shapes are [Pydantic](https://docs.pydantic.dev) models
 (`CatalogResponse`, `TokenDetailResponse`, `TokenSummary`, `DefiInfo`,
 `PendingCorporateAction`, `RecentCorporateAction`, `DefiDetailResponse`,
 `DefiMarket`, `DefiPool`, `HoldersResponse`, `TopHolder`, `SupplyChange24h`,
 `SlippageResponse`, `SlippagePoolResult`, `OhlcResponse`, `OhlcCandle`,
-`OhlcInterval`, `BaseTokensResponse`, `BaseToken`, `BaseTokenStatus`) —
+`OhlcInterval`, `BaseTokensResponse`, `BaseToken`, `BaseTokenStatus`,
+`CreditBundle`, `CreditPurchaseAck`, `CreditBalance`) —
 attributes are idiomatic `snake_case`; the API's own `camelCase` JSON keys
 also work if you construct a model directly.
 
