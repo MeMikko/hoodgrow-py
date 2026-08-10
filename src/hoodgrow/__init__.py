@@ -11,6 +11,9 @@ from .models import (
     BaseTokenStatus,
     CatalogResponse,
     CorporateActions,
+    CreditBalance,
+    CreditBundle,
+    CreditPurchaseAck,
     DefiDetailResponse,
     DefiInfo,
     DefiMarket,
@@ -32,7 +35,7 @@ from .models import (
     TopHolders,
 )
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "HoodGrowClient",
@@ -42,6 +45,9 @@ __all__ = [
     "BaseTokenStatus",
     "CatalogResponse",
     "CorporateActions",
+    "CreditBalance",
+    "CreditBundle",
+    "CreditPurchaseAck",
     "DefiDetailResponse",
     "DefiInfo",
     "DefiMarket",

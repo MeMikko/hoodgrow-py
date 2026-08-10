@@ -326,3 +326,33 @@ class BaseTokensResponse(_HoodGrowModel):
     updated_at: str = Field(alias="updatedAt")
     note: str
     tokens: list[BaseToken]
+
+
+class CreditBundle(_HoodGrowModel):
+    """One prepaid credit bundle offer — pay ``price_usd`` once via x402,
+    receive ``credit_usd`` of spendable balance (``credit_usd >=
+    price_usd``; the difference is the bundle's bonus). See
+    :meth:`hoodgrow.HoodGrowClient.list_credit_bundles`/``buy_credits``."""
+
+    price_usd: float = Field(alias="priceUsd")
+    credit_usd: float = Field(alias="creditUsd")
+
+
+class CreditPurchaseAck(_HoodGrowModel):
+    """``POST /api/agent/credits/purchase`` response — an acknowledgment,
+    not a confirmed balance: the actual credit lands once x402 settlement
+    confirms server-side (normally before this response arrives). See
+    :meth:`hoodgrow.HoodGrowClient.get_credit_balance` to confirm."""
+
+    ok: bool
+    bundle: str
+    price_usd: float = Field(alias="priceUsd")
+    credit_usd: float = Field(alias="creditUsd")
+    note: str
+
+
+class CreditBalance(_HoodGrowModel):
+    """``GET /api/agent/credits/balance`` response."""
+
+    wallet_address: str = Field(alias="walletAddress")
+    balance_usd: float = Field(alias="balanceUsd")

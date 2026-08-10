@@ -1,9 +1,16 @@
 import pytest
 import responses
+from eth_account import Account
 
 from hoodgrow import HoodGrowClient, HoodGrowError
 
 BASE = "https://www.hoodgrow.com"
+
+# Well-known public test private key (Hardhat/Anvil default account #0) —
+# never funded, safe to hardcode in a test file.
+TEST_ACCOUNT = Account.from_key(
+    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+)
 
 
 def test_constructor_requires_api_key_or_signer():
@@ -344,3 +351,73 @@ def test_get_base_tokens_hits_the_base_registry_endpoint():
     assert len(result.tokens) == 1
     assert result.tokens[0].status == "pre_launch"
     assert responses.calls[0].request.url == f"{BASE}/api/agent/base/tokens"
+
+
+@responses.activate
+def test_list_credit_bundles_fetches_the_catalog_with_no_auth():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/credits/purchase",
+        json={"bundles": {"10": {"priceUsd": 10, "creditUsd": 11}}},
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123")
+    bundles = client.list_credit_bundles()
+
+    assert bundles["10"].price_usd == 10
+    assert bundles["10"].credit_usd == 11
+
+
+def test_get_credit_balance_requires_a_signer():
+    client = HoodGrowClient(api_key="test-key-123")
+    with pytest.raises(ValueError, match="requires a `signer`"):
+        client.get_credit_balance()
+
+
+def test_buy_credits_requires_a_signer():
+    client = HoodGrowClient(api_key="test-key-123")
+    with pytest.raises(ValueError, match="requires a `signer`"):
+        client.buy_credits("10")
+
+
+@responses.activate
+def test_get_credit_balance_signs_the_canonical_message_and_sends_credit_auth_headers():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/credits/balance",
+        json={"walletAddress": TEST_ACCOUNT.address.lower(), "balanceUsd": 5.5},
+        status=200,
+    )
+
+    client = HoodGrowClient(signer=TEST_ACCOUNT)
+    balance = client.get_credit_balance()
+
+    assert balance.balance_usd == 5.5
+    req = responses.calls[0].request
+    assert req.headers["X-HoodGrow-Credit-Wallet"] == TEST_ACCOUNT.address
+    assert req.headers["X-HoodGrow-Credit-Signature"].startswith("0x")
+    assert int(req.headers["X-HoodGrow-Credit-Timestamp"]) > 0
+
+
+@responses.activate
+def test_use_credits_attaches_signed_headers_to_a_metered_get():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/tokens",
+        json={
+            "chainId": 4663,
+            "updatedAt": "2026-07-30T00:00:00.000Z",
+            "tokens": [],
+            "pendingCorporateActions": [],
+            "recentCorporateActions": [],
+        },
+        status=200,
+    )
+
+    client = HoodGrowClient(signer=TEST_ACCOUNT, use_credits=True)
+    client.get_catalog()
+
+    req = responses.calls[0].request
+    assert req.headers["X-HoodGrow-Credit-Wallet"] == TEST_ACCOUNT.address
+    assert req.headers["X-HoodGrow-Credit-Signature"].startswith("0x")

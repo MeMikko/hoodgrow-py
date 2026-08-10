@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 from urllib.parse import quote
 
@@ -11,6 +12,9 @@ from .models import (
     BaseTokensResponse,
     CatalogResponse,
     CorporateActions,
+    CreditBalance,
+    CreditBundle,
+    CreditPurchaseAck,
     DefiDetailResponse,
     HoldersResponse,
     OhlcInterval,
@@ -45,6 +49,7 @@ class HoodGrowClient:
         api_key: str | None = None,
         signer: Any | None = None,
         base_url: str = DEFAULT_BASE_URL,
+        use_credits: bool = False,
     ) -> None:
         """
         Args:
@@ -63,9 +68,21 @@ class HoodGrowClient:
             base_url: Override the API base URL — for testing against a
                 non-production deployment. Defaults to
                 https://www.hoodgrow.com.
+            use_credits: When ``True`` and ``signer`` is set, every metered
+                call is authenticated by spending from that wallet's
+                prepaid credit balance (see ``buy_credits``) instead of a
+                fresh x402 payment — a lightweight signed message, no gas,
+                no facilitator round trip. Defaults to ``False``, so an
+                existing ``signer``-only client keeps paying x402 per call
+                exactly as before; only opt in once you've actually bought
+                credits for this wallet (calling with an empty balance
+                fails with a 402 :class:`HoodGrowError` instead of falling
+                back to x402). Ignored when ``api_key`` is set.
         """
         self._base_url = base_url.rstrip("/")
         self._session = requests.Session()
+        self._signer = signer
+        self._use_credits = bool(use_credits and signer is not None and not api_key)
 
         if api_key:
             self._session.headers["Authorization"] = f"Bearer {api_key}"
@@ -85,8 +102,42 @@ class HoodGrowClient:
                 "see https://github.com/MeMikko/hoodgrow-py#readme"
             )
 
+    def _sign_credit_auth_headers(self, method: str, path: str) -> dict[str, str]:
+        """Off-chain wallet-signature auth for a credit-funded call —
+        mirrors the server's own buildCreditAuthMessage exactly (HoodGrow/
+        src/lib/creditAuth.ts): method + pathname (no query string, no
+        host) + a fresh unix-second timestamp, EIP-191 ``personal_sign``'d
+        by ``signer``. Single-use server-side (replay is rejected) and only
+        valid for ~60 seconds, so it's generated fresh per call, never
+        cached."""
+        if self._signer is None:
+            raise ValueError("credit auth requires a `signer`")
+        from eth_account.messages import encode_defunct
+
+        pathname = path.split("?")[0]
+        timestamp = str(int(time.time()))
+        message = f"HoodGrow credit spend\nmethod: {method.upper()}\npath: {pathname}\ntimestamp: {timestamp}"
+        signed = self._signer.sign_message(encode_defunct(text=message))
+        signature = signed.signature.hex()
+        if not signature.startswith("0x"):
+            signature = f"0x{signature}"
+        return {
+            "X-HoodGrow-Credit-Wallet": self._signer.address,
+            "X-HoodGrow-Credit-Timestamp": timestamp,
+            "X-HoodGrow-Credit-Signature": signature,
+        }
+
     def _request(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        res = self._session.get(f"{self._base_url}{path}", params=params)
+        if self._use_credits:
+            # A credit-spend call is NOT an x402 payment — it must bypass
+            # self._session (wrapRequestsWithPayment patched it to handle
+            # x402 challenges, which would misinterpret an "insufficient
+            # credit balance" 402) and use a plain `requests.get` instead,
+            # same as get_credit_balance/list_credit_bundles below.
+            headers = self._sign_credit_auth_headers("GET", path)
+            res = requests.get(f"{self._base_url}{path}", params=params, headers=headers)
+        else:
+            res = self._session.get(f"{self._base_url}{path}", params=params)
         if not res.ok:
             body: Any = None
             try:
@@ -201,3 +252,67 @@ class HoodGrowClient:
         yet; it flips to ``"live"`` automatically once real supply
         appears on-chain. $0.05/call via x402, free with an API key."""
         return BaseTokensResponse.model_validate(self._request("/api/agent/base/tokens"))
+
+    def list_credit_bundles(self) -> dict[str, CreditBundle]:
+        """Lists the current prepaid credit bundles (id -> {price_usd,
+        credit_usd}) — no payment, no auth, works without a ``signer`` or
+        ``api_key`` at all. See :meth:`buy_credits` to actually purchase
+        one."""
+        res = requests.get(f"{self._base_url}/api/agent/credits/purchase")
+        if not res.ok:
+            raise HoodGrowError(
+                f"failed to list credit bundles: {res.status_code} {res.reason}",
+                res.status_code,
+                None,
+            )
+        body = res.json()
+        return {k: CreditBundle.model_validate(v) for k, v in body["bundles"].items()}
+
+    def buy_credits(self, bundle_id: str) -> CreditPurchaseAck:
+        """Pays for one prepaid credit bundle via x402 — requires
+        ``signer`` (a bearer-key client is already free/unmetered, so
+        buying credits makes no sense for it). The wallet's balance is
+        credited server-side once settlement confirms, which normally
+        completes before this call returns; call :meth:`get_credit_balance`
+        to be sure. After this, construct (or reconstruct) the client with
+        ``use_credits=True`` to start spending the balance instead of
+        paying x402 per call."""
+        if self._signer is None:
+            raise ValueError("buy_credits requires a `signer` — credit bundles are paid via x402")
+        res = self._session.post(
+            f"{self._base_url}/api/agent/credits/purchase",
+            params={"bundle": bundle_id},
+        )
+        if not res.ok:
+            body: Any = None
+            try:
+                body = res.json()
+            except ValueError:
+                pass
+            raise HoodGrowError(
+                f"credit purchase failed: {res.status_code} {res.reason}",
+                res.status_code,
+                body,
+            )
+        return CreditPurchaseAck.model_validate(res.json())
+
+    def get_credit_balance(self) -> CreditBalance:
+        """This wallet's current prepaid credit balance — free (no x402
+        charge, no credit spend), authenticated with the same
+        wallet-signature scheme every credit-funded call uses. Requires
+        ``signer``."""
+        path = "/api/agent/credits/balance"
+        headers = self._sign_credit_auth_headers("GET", path)
+        res = requests.get(f"{self._base_url}{path}", headers=headers)
+        if not res.ok:
+            body: Any = None
+            try:
+                body = res.json()
+            except ValueError:
+                pass
+            raise HoodGrowError(
+                f"failed to fetch credit balance: {res.status_code} {res.reason}",
+                res.status_code,
+                body,
+            )
+        return CreditBalance.model_validate(res.json())
