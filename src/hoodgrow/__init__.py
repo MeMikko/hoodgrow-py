@@ -10,7 +10,12 @@ from .models import (
     BaseTokensResponse,
     BaseTokenStatus,
     CatalogResponse,
+    CorporateActionEvent,
+    CorporateActionFeedStatus,
     CorporateActions,
+    CorporateActionsFeedResponse,
+    CorporateActionsPagination,
+    CorporateActionSource,
     CreditBalance,
     CreditBundle,
     CreditPurchaseAck,
@@ -33,18 +38,26 @@ from .models import (
     TokenSummary,
     TopHolder,
     TopHolders,
+    WebhookEvent,
 )
+from .webhooks import verify_webhook_signature
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "HoodGrowClient",
     "HoodGrowError",
+    "verify_webhook_signature",
     "BaseToken",
     "BaseTokensResponse",
     "BaseTokenStatus",
     "CatalogResponse",
+    "CorporateActionEvent",
+    "CorporateActionFeedStatus",
     "CorporateActions",
+    "CorporateActionsFeedResponse",
+    "CorporateActionsPagination",
+    "CorporateActionSource",
     "CreditBalance",
     "CreditBundle",
     "CreditPurchaseAck",
@@ -67,4 +80,5 @@ __all__ = [
     "TokenSummary",
     "TopHolder",
     "TopHolders",
+    "WebhookEvent",
 ]

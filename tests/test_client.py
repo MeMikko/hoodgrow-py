@@ -1,8 +1,11 @@
+import hashlib
+import hmac
+
 import pytest
 import responses
 from eth_account import Account
 
-from hoodgrow import HoodGrowClient, HoodGrowError
+from hoodgrow import HoodGrowClient, HoodGrowError, verify_webhook_signature
 
 BASE = "https://www.hoodgrow.com"
 
@@ -421,3 +424,174 @@ def test_use_credits_attaches_signed_headers_to_a_metered_get():
     req = responses.calls[0].request
     assert req.headers["X-HoodGrow-Credit-Wallet"] == TEST_ACCOUNT.address
     assert req.headers["X-HoodGrow-Credit-Signature"].startswith("0x")
+
+
+# One feed event, spread into tests that only care about a couple fields.
+FEED_EVENT = {
+    "symbol": "TSLA",
+    "contract": "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
+    "type": "staged",
+    "actionType": "split",
+    "multiplierFrom": 1,
+    "multiplierTo": 3,
+    "executionDate": "2026-08-20T13:30:00.000Z",
+    "detectedAt": "2026-08-11T09:14:22.000Z",
+    "lastUpdated": "2026-08-11T09:14:22.000Z",
+    "freshnessSeconds": 17265,
+    "blockNumber": 8421337,
+    "transactionHash": "0xdeadbeef",
+    "source": "onchain",
+}
+
+
+@responses.activate
+def test_get_corporate_actions_feed_builds_filters_and_hits_feed_endpoint():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/corporate-actions",
+        json={
+            "chainId": 4663,
+            "updatedAt": "2026-08-11T14:00:00.000Z",
+            "actions": [FEED_EVENT],
+            "pagination": {"nextCursor": None, "limit": 50},
+        },
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123")
+    page = client.get_corporate_actions_feed(
+        status="staged", symbol="tsla", from_="2026-08-01T00:00:00.000Z", limit=50
+    )
+
+    assert len(page.actions) == 1
+    assert page.actions[0].source == "onchain"
+    assert page.actions[0].multiplier_to == 3
+    assert page.pagination.next_cursor is None
+
+    from urllib.parse import parse_qs, urlparse
+
+    q = parse_qs(urlparse(responses.calls[0].request.url).query)
+    assert q["status"] == ["staged"]
+    assert q["symbol"] == ["tsla"]
+    assert q["from"] == ["2026-08-01T00:00:00.000Z"]
+    assert q["limit"] == ["50"]
+
+
+@responses.activate
+def test_iterate_corporate_actions_walks_every_page():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/corporate-actions",
+        json={
+            "chainId": 4663,
+            "updatedAt": "x",
+            "actions": [{**FEED_EVENT, "symbol": "A"}],
+            "pagination": {"nextCursor": "cursor-1", "limit": 50},
+        },
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/corporate-actions",
+        json={
+            "chainId": 4663,
+            "updatedAt": "x",
+            "actions": [{**FEED_EVENT, "symbol": "B"}],
+            "pagination": {"nextCursor": None, "limit": 50},
+        },
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123")
+    seen = [event.symbol for event in client.iterate_corporate_actions(status="staged")]
+
+    assert seen == ["A", "B"]
+
+    from urllib.parse import parse_qs, urlparse
+
+    q0 = parse_qs(urlparse(responses.calls[0].request.url).query)
+    q1 = parse_qs(urlparse(responses.calls[1].request.url).query)
+    assert "cursor" not in q0  # first page: no cursor
+    assert q1["cursor"] == ["cursor-1"]  # second page follows next_cursor
+
+
+def test_verify_webhook_signature_accepts_valid_and_rejects_tampering():
+    secret = "whsec_test_secret"
+    body = (
+        '{"id":"NVDA-newly-pending-x","event":"corporate_action.staged",'
+        '"symbol":"NVDA","currentMultiplier":1,"stagedMultiplier":3,'
+        '"effectiveAt":null,"ts":"2026-08-11T09:14:22.000Z"}'
+    )
+    sig = hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
+
+    assert verify_webhook_signature(body, f"sha256={sig}", secret) is True
+    assert verify_webhook_signature(body, sig, secret) is True  # sha256= prefix optional
+    assert verify_webhook_signature(body.encode(), f"sha256={sig}", secret) is True  # bytes
+    assert verify_webhook_signature(body + " ", f"sha256={sig}", secret) is False  # tampered
+    assert verify_webhook_signature(body, f"sha256={sig}", "wrong-secret") is False
+    assert verify_webhook_signature(body, None, secret) is False  # missing header
+    assert verify_webhook_signature(body, "sha256=not-valid-hex", secret) is False
+
+
+@responses.activate
+def test_max_retries_retries_429_on_bearer_then_succeeds():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/tokens",
+        json={"error": "Too many requests"},
+        status=429,
+        headers={"Retry-After": "0"},
+    )
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/tokens",
+        json={
+            "chainId": 4663,
+            "updatedAt": "2026-07-30T00:00:00.000Z",
+            "tokens": [],
+            "pendingCorporateActions": [],
+            "recentCorporateActions": [],
+        },
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123", max_retries=2)
+    catalog = client.get_catalog()
+
+    assert catalog.chain_id == 4663
+    assert len(responses.calls) == 2
+
+
+@responses.activate
+def test_429_is_not_retried_by_default():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/tokens",
+        json={"error": "Too many requests"},
+        status=429,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123")
+    with pytest.raises(HoodGrowError) as exc:
+        client.get_catalog()
+
+    assert exc.value.status == 429
+    assert len(responses.calls) == 1
+
+
+@responses.activate
+def test_max_retries_ignored_on_signer_path():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/tokens",
+        json={"error": "Too many requests"},
+        status=429,
+        headers={"Retry-After": "0"},
+    )
+
+    client = HoodGrowClient(signer=TEST_ACCOUNT, max_retries=5)
+    with pytest.raises(HoodGrowError) as exc:
+        client.get_catalog()
+
+    assert exc.value.status == 429
+    assert len(responses.calls) == 1  # exactly one attempt despite max_retries=5
