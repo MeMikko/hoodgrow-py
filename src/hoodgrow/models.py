@@ -279,13 +279,20 @@ class OhlcCandle(_HoodGrowModel):
     #: How many raw ~15-min price snapshots contributed to this candle — a
     #: low count (e.g. 1) means a thinner spread, not a data error.
     sample_count: int = Field(alias="sampleCount")
+    #: USD swap volume across the token's Uniswap V3 pools during this bucket,
+    #: summed from indexed Swap events. ``None`` (not ``0``) for a bucket with
+    #: no indexed volume — older than the volume indexer's backfill window.
+    volume_usd: float | None = Field(alias="volumeUsd")
+    #: Number of swaps in the bucket, alongside ``volume_usd``. ``None`` under
+    #: the same conditions.
+    swap_count: int | None = Field(alias="swapCount")
 
 
 class OhlcResponse(_HoodGrowModel):
     """``GET /api/agent/ohlc/{symbol}`` — OHLC price candles for
-    backtesting. Deliberately OHLC, not OHLCV: HoodGrow has no historical
-    trading-volume time series to draw a volume field from, so none is
-    included."""
+    backtesting, with per-candle ``volume_usd``/``swap_count`` (USD swap
+    volume across the token's Uniswap V3 pools). Volume is ``None`` for
+    buckets older than the volume indexer's backfill window."""
 
     chain_id: int = Field(alias="chainId")
     symbol: str

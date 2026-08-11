@@ -302,9 +302,22 @@ def test_get_ohlc_passes_from_to_and_limit_through_as_query_params():
                     "low": 179.0,
                     "close": 181.2,
                     "sampleCount": 96,
-                }
+                    "volumeUsd": 412683.55,
+                    "swapCount": 1840,
+                },
+                {
+                    "bucketStart": "2026-07-02T00:00:00.000Z",
+                    "bucketEndExclusive": "2026-07-03T00:00:00.000Z",
+                    "open": 181.2,
+                    "high": 183.0,
+                    "low": 180.5,
+                    "close": 182.7,
+                    "sampleCount": 96,
+                    "volumeUsd": None,
+                    "swapCount": None,
+                },
             ],
-            "note": "OHLC only — no volume field; HoodGrow has no historical trading-volume time series.",
+            "note": "Each candle's volumeUsd/swapCount is USD swap volume across the token's Uniswap V3 pools; null for buckets older than the volume indexer's backfill window.",
         },
         status=200,
     )
@@ -314,8 +327,12 @@ def test_get_ohlc_passes_from_to_and_limit_through_as_query_params():
         "nvda", "1d", from_="2026-07-01T00:00:00.000Z", to="2026-08-01T00:00:00.000Z", limit=30
     )
 
-    assert len(result.candles) == 1
+    assert len(result.candles) == 2
     assert result.candles[0].sample_count == 96
+    assert result.candles[0].volume_usd == 412683.55
+    assert result.candles[0].swap_count == 1840
+    assert result.candles[1].volume_usd is None
+    assert result.candles[1].swap_count is None
     assert responses.calls[0].request.url == (
         f"{BASE}/api/agent/ohlc/NVDA?interval=1d&from=2026-07-01T00%3A00%3A00.000Z"
         "&to=2026-08-01T00%3A00%3A00.000Z&limit=30"
