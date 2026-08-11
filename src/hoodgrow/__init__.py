@@ -40,14 +40,26 @@ from .models import (
     TopHolders,
     WebhookEvent,
 )
+from .tools import (
+    HOODGROW_TOOL_NAMES,
+    HOODGROW_TOOLS,
+    execute_hoodgrow_tool,
+    hoodgrow_anthropic_tools,
+    hoodgrow_openai_tools,
+)
 from .webhooks import verify_webhook_signature
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 __all__ = [
     "HoodGrowClient",
     "HoodGrowError",
     "verify_webhook_signature",
+    "HOODGROW_TOOLS",
+    "HOODGROW_TOOL_NAMES",
+    "execute_hoodgrow_tool",
+    "hoodgrow_openai_tools",
+    "hoodgrow_anthropic_tools",
     "BaseToken",
     "BaseTokensResponse",
     "BaseTokenStatus",
