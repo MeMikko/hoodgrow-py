@@ -22,6 +22,8 @@ EXPECTED_TOOLS = [
     "get_slippage",
     "get_ohlc",
     "get_base_tokens",
+    "get_markets",
+    "get_trades",
 ]
 
 _CATALOG_BODY = {

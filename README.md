@@ -100,6 +100,8 @@ Exactly one of `api_key` / `signer` is required.
 | `get_slippage(symbol, amount_usd, side)` | $0.05 | How much a USD-sized trade (`side: "buy" \| "sell"`) would move the price, per Uniswap V3 pool — `best_pool_address`/`best_effective_price` pick the best one for you |
 | `get_ohlc(symbol, interval, from_=None, to=None, limit=None)` | $0.05 | OHLC price candles for backtesting (`interval: "1h" \| "4h" \| "1d"`; `from_`/`to` are ISO 8601 strings, default to the last 30 days). Each candle carries `volume_usd`/`swap_count` — USD swap volume across the token's Uniswap V3 pools — `None` for buckets older than the volume indexer's backfill window |
 | `get_base_tokens()` | $0.05 | Base mainnet (chain 8453) B20 native-equity-token registry — a much smaller sibling of `get_catalog`. **Pre-launch**: check each token's `status` (`"pre_launch" \| "live"`) before treating it as tradable — `"pre_launch"` means no price, no DEX liquidity, no holders exist for it yet |
+| `get_markets(limit=None)` | $0.05 | Market movers across the whole catalog: `top_gainers`/`top_losers` (24h change), `top_volume` (24h swap volume), `top_tvl` (Uniswap V3 liquidity). `limit` caps each list (1-50, default 10); gainers/losers can be empty on a flat market |
+| `get_trades(symbol=None, limit=None)` | $0.05 | Recent large ("whale") trades in the stock-token Uniswap V3 pools, newest first — each with `side` (`"buy" \| "sell"`), USD size, and `tx_hash`. Omit `symbol` for the global feed; `limit` 1-100 (default 20) |
 | `list_credit_bundles()` | free | Current prepaid credit bundle catalog (`{id: CreditBundle(price_usd, credit_usd)}`) — no auth required |
 | `buy_credits(bundle_id)` | one x402 payment | Pays for one bundle; requires `signer`. Balance lands once settlement confirms — see `get_credit_balance()` |
 | `get_credit_balance()` | free | This wallet's current credit balance; requires `signer` |
@@ -110,6 +112,7 @@ Full response shapes are [Pydantic](https://docs.pydantic.dev) models
 `DefiMarket`, `DefiPool`, `HoldersResponse`, `TopHolder`, `SupplyChange24h`,
 `SlippageResponse`, `SlippagePoolResult`, `OhlcResponse`, `OhlcCandle`,
 `OhlcInterval`, `BaseTokensResponse`, `BaseToken`, `BaseTokenStatus`,
+`MarketsResponse`, `MarketToken`, `TradesResponse`, `Trade`, `TradeSide`,
 `CreditBundle`, `CreditPurchaseAck`, `CreditBalance`, `CorporateActionEvent`,
 `CorporateActionsFeedResponse`, `WebhookEvent`) —
 attributes are idiomatic `snake_case`; the API's own `camelCase` JSON keys
@@ -243,8 +246,9 @@ except Exception:
 ```
 
 `idempotency_key` is a keyword argument on `get_catalog`, `get_token`,
-`get_defi`, `get_holders`, `get_slippage`, `get_ohlc`, `get_base_tokens`, and
-`get_corporate_actions_feed` (e.g. `get_holders("NVDA", 10, idempotency_key=key)`).
+`get_defi`, `get_holders`, `get_slippage`, `get_ohlc`, `get_base_tokens`,
+`get_markets`, `get_trades`, and `get_corporate_actions_feed` (e.g.
+`get_holders("NVDA", 10, idempotency_key=key)`).
 Reuse a key only to retry the exact same call — a key reused for a *different*
 request is rejected with `422`.
 

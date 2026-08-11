@@ -335,6 +335,72 @@ class BaseTokensResponse(_HoodGrowModel):
     tokens: list[BaseToken]
 
 
+class MarketToken(_HoodGrowModel):
+    """One token's row in a market-movers list. ``None`` (not ``0``)
+    throughout keeps "no data" distinct from a real zero:
+    ``change_24h_percent`` is ``None`` when 24h history is too thin,
+    ``tvl_usd``/``volume_24h_usd`` ``None`` when the token has no pool or no
+    indexed volume yet."""
+
+    symbol: str
+    name: str
+    price_usd: float | None = Field(None, alias="priceUsd")
+    price_source: PriceSource = Field(None, alias="priceSource")
+    #: Percent, e.g. 3.21 for +3.21%.
+    change_24h_percent: float | None = Field(None, alias="change24hPercent")
+    tvl_usd: float | None = Field(None, alias="tvlUsd")
+    volume_24h_usd: float | None = Field(None, alias="volume24hUsd")
+    pool_count: int = Field(alias="poolCount")
+    snapshot_ts: str | None = Field(None, alias="snapshotTs")
+
+
+class MarketsResponse(_HoodGrowModel):
+    """``GET /api/agent/markets`` — cross-token movers ranked across the
+    whole Robinhood Chain catalog. Each list is capped by the request's
+    ``limit`` (default 10); gainers/losers can be empty when the market is
+    flat (e.g. weekends)."""
+
+    chain_id: int = Field(alias="chainId")
+    updated_at: str = Field(alias="updatedAt")
+    token_count: int = Field(alias="tokenCount")
+    top_gainers: list[MarketToken] = Field(alias="topGainers")
+    top_losers: list[MarketToken] = Field(alias="topLosers")
+    top_volume: list[MarketToken] = Field(alias="topVolume")
+    top_tvl: list[MarketToken] = Field(alias="topTvl")
+    note: str
+
+
+#: Trade direction from the stock token's perspective: ``"buy"`` = the trader
+#: spent USDG to acquire the stock token, ``"sell"`` = sold it for USDG.
+TradeSide = Literal["buy", "sell"]
+
+
+class Trade(_HoodGrowModel):
+    """One large ("whale") swap from the trades feed. ``usd`` is the swap's
+    USDG leg — its USD size."""
+
+    symbol: str
+    pool_address: str = Field(alias="poolAddress")
+    side: TradeSide
+    usd: float
+    tx_hash: str = Field(alias="txHash")
+    block_number: int = Field(alias="blockNumber")
+    ts: str
+
+
+class TradesResponse(_HoodGrowModel):
+    """``GET /api/agent/trades`` — recent large trades across Robinhood
+    Chain stock-token Uniswap V3 pools, newest first. ``symbol`` is the
+    filter that was applied (or ``None`` for the global feed). An empty
+    ``trades`` list means none were indexed in range."""
+
+    chain_id: int = Field(alias="chainId")
+    symbol: str | None = None
+    updated_at: str = Field(alias="updatedAt")
+    trades: list[Trade]
+    note: str
+
+
 class CreditBundle(_HoodGrowModel):
     """One prepaid credit bundle offer — pay ``price_usd`` once via x402,
     receive ``credit_usd`` of spendable balance (``credit_usd >=

@@ -374,6 +374,81 @@ def test_get_base_tokens_hits_the_base_registry_endpoint():
 
 
 @responses.activate
+def test_get_markets_passes_limit_and_returns_the_movers_lists():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/markets",
+        json={
+            "chainId": 4663,
+            "updatedAt": "2026-08-11T12:00:00.000Z",
+            "tokenCount": 48,
+            "topGainers": [
+                {
+                    "symbol": "NVDA",
+                    "name": "NVIDIA",
+                    "priceUsd": 182.31,
+                    "priceSource": "chainlink",
+                    "change24hPercent": 3.42,
+                    "tvlUsd": 842000,
+                    "volume24hUsd": 152000,
+                    "poolCount": 2,
+                    "snapshotTs": "2026-08-11T11:55:00.000Z",
+                }
+            ],
+            "topLosers": [],
+            "topVolume": [],
+            "topTvl": [],
+            "note": "Movers ...",
+        },
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123")
+    result = client.get_markets(limit=5)
+
+    assert result.token_count == 48
+    assert result.top_gainers[0].symbol == "NVDA"
+    assert result.top_gainers[0].change_24h_percent == 3.42
+    assert result.top_losers == []
+    assert responses.calls[0].request.url == f"{BASE}/api/agent/markets?limit=5"
+
+
+@responses.activate
+def test_get_trades_scopes_to_a_symbol_and_returns_the_whale_feed():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/trades",
+        json={
+            "chainId": 4663,
+            "symbol": "NVDA",
+            "updatedAt": "2026-08-11T12:00:00.000Z",
+            "trades": [
+                {
+                    "symbol": "NVDA",
+                    "poolAddress": "0x34D0dC122CF9A8Eb296fC5e0D3A233625D7d19b7",
+                    "side": "buy",
+                    "usd": 4200.5,
+                    "txHash": "0x8f2a1c3b",
+                    "blockNumber": 12345678,
+                    "ts": "2026-08-11T11:58:00.000Z",
+                }
+            ],
+            "note": "Large trades ...",
+        },
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123")
+    result = client.get_trades(symbol="nvda", limit=10)
+
+    assert result.symbol == "NVDA"
+    assert result.trades[0].side == "buy"
+    assert result.trades[0].usd == 4200.5
+    assert result.trades[0].block_number == 12345678
+    assert responses.calls[0].request.url == f"{BASE}/api/agent/trades?symbol=NVDA&limit=10"
+
+
+@responses.activate
 def test_list_credit_bundles_fetches_the_catalog_with_no_auth():
     responses.add(
         responses.GET,

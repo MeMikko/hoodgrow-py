@@ -187,6 +187,49 @@ HOODGROW_TOOLS: list[dict[str, Any]] = [
         ),
         "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
     },
+    {
+        "name": "get_markets",
+        "description": (
+            "Market movers across the Robinhood Chain stock-token catalog: top gainers and "
+            "losers by 24h price change, highest 24h swap volume, and deepest Uniswap V3 "
+            "liquidity (TVL). limit caps each list (1-50, default 10); gainers/losers can be "
+            "empty when the market is flat. $0.05 via x402, free with an API key."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50,
+                    "description": "Max entries per list (default 10).",
+                },
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "get_trades",
+        "description": (
+            "Recent large (whale) trades in Robinhood Chain stock-token Uniswap V3 pools, "
+            "newest first — each with a buy/sell side, USD size, and transaction hash. Omit "
+            "symbol for the global feed. limit caps the list (1-100, default 20). $0.05 via "
+            "x402, free with an API key."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "symbol": _SYMBOL_PROP,
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Max trades to return (default 20).",
+                },
+            },
+            "additionalProperties": False,
+        },
+    },
 ]
 
 #: The tool names, in order.
@@ -249,6 +292,15 @@ def execute_hoodgrow_tool(
         )
     if name == "get_base_tokens":
         return client.get_base_tokens(idempotency_key=idempotency_key)
+    if name == "get_markets":
+        return client.get_markets(args.get("limit"), idempotency_key=idempotency_key)
+    if name == "get_trades":
+        symbol = args.get("symbol")
+        return client.get_trades(
+            symbol if symbol else None,
+            args.get("limit"),
+            idempotency_key=idempotency_key,
+        )
     raise ValueError(f"Unknown HoodGrow tool: {name}")
 
 

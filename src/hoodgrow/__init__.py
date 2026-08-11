@@ -24,6 +24,8 @@ from .models import (
     DefiMarket,
     DefiPool,
     HoldersResponse,
+    MarketsResponse,
+    MarketToken,
     OhlcCandle,
     OhlcInterval,
     OhlcResponse,
@@ -38,6 +40,9 @@ from .models import (
     TokenSummary,
     TopHolder,
     TopHolders,
+    Trade,
+    TradeSide,
+    TradesResponse,
     WebhookEvent,
 )
 from .tools import (
@@ -49,7 +54,7 @@ from .tools import (
 )
 from .webhooks import verify_webhook_signature
 
-__version__ = "0.8.0"
+__version__ = "0.10.0"
 
 __all__ = [
     "HoodGrowClient",
@@ -78,6 +83,8 @@ __all__ = [
     "DefiMarket",
     "DefiPool",
     "HoldersResponse",
+    "MarketsResponse",
+    "MarketToken",
     "OhlcCandle",
     "OhlcInterval",
     "OhlcResponse",
@@ -92,5 +99,8 @@ __all__ = [
     "TokenSummary",
     "TopHolder",
     "TopHolders",
+    "Trade",
+    "TradeSide",
+    "TradesResponse",
     "WebhookEvent",
 ]
