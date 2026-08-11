@@ -595,3 +595,59 @@ def test_max_retries_ignored_on_signer_path():
 
     assert exc.value.status == 429
     assert len(responses.calls) == 1  # exactly one attempt despite max_retries=5
+
+
+_CATALOG_BODY = {
+    "chainId": 4663,
+    "updatedAt": "2026-07-30T00:00:00.000Z",
+    "tokens": [],
+    "pendingCorporateActions": [],
+    "recentCorporateActions": [],
+}
+
+
+@responses.activate
+def test_idempotency_key_is_sent_as_header():
+    responses.add(responses.GET, f"{BASE}/api/agent/tokens", json=_CATALOG_BODY, status=200)
+
+    client = HoodGrowClient(api_key="test-key-123")
+    client.get_catalog(idempotency_key="abc-123")
+
+    assert responses.calls[0].request.headers.get("Idempotency-Key") == "abc-123"
+
+
+@responses.activate
+def test_no_idempotency_header_when_omitted():
+    responses.add(responses.GET, f"{BASE}/api/agent/tokens", json=_CATALOG_BODY, status=200)
+
+    client = HoodGrowClient(api_key="test-key-123")
+    client.get_catalog()
+
+    assert responses.calls[0].request.headers.get("Idempotency-Key") is None
+
+
+@responses.activate
+def test_idempotency_key_on_trailing_param_methods():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/holders/NVDA",
+        json={
+            "chainId": 4663,
+            "symbol": "NVDA",
+            "updatedAt": "2026-08-08T00:00:00.000Z",
+            "holderCount": 1,
+            "holderCountDelta": None,
+            "holderCountDeltaSinceTs": None,
+            "holderSnapshotTs": None,
+            "supplyChange24h": None,
+            "topHolders": {"snapshotTs": None, "totalHolders": 1, "holders": []},
+        },
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123")
+    client.get_holders("nvda", 10, idempotency_key="hold-1")
+
+    req = responses.calls[0].request
+    assert req.headers.get("Idempotency-Key") == "hold-1"
+    assert "limit=10" in req.url
