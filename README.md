@@ -182,6 +182,31 @@ Need more sustained throughput? A persistent API key with its own higher
 limit is available — see
 [hoodgrow.com/api-access](https://www.hoodgrow.com/api-access).
 
+## Idempotent retries (paid calls)
+
+To retry a **paid** call that timed out without risking a double charge, pass
+a stable `idempotency_key` — the server replays the first stored response
+instead of charging again. Works on every metered read method (the x402
+payment adapter preserves the header on its paid retry):
+
+```python
+import uuid
+
+key = str(uuid.uuid4())  # one stable key per logical call
+try:
+    catalog = client.get_catalog(idempotency_key=key)
+except Exception:
+    # Timed out / network blip? Retrying with the SAME key is safe — a settled
+    # first attempt is replayed, not re-charged.
+    catalog = client.get_catalog(idempotency_key=key)
+```
+
+`idempotency_key` is a keyword argument on `get_catalog`, `get_token`,
+`get_defi`, `get_holders`, `get_slippage`, `get_ohlc`, `get_base_tokens`, and
+`get_corporate_actions_feed` (e.g. `get_holders("NVDA", 10, idempotency_key=key)`).
+Reuse a key only to retry the exact same call — a key reused for a *different*
+request is rejected with `422`.
+
 ## Development
 
 ```bash

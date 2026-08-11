@@ -158,11 +158,20 @@ class HoodGrowClient:
             "X-HoodGrow-Credit-Signature": signature,
         }
 
-    def _request(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _request(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
         url = f"{self._base_url}{path}"
         # Retry a 429 ONLY on the free bearer path. x402/credit calls are not
         # idempotent (a retry can pay twice / re-spend), so they get one shot.
         max_attempts = self._max_retries + 1 if self._using_api_key else 1
+        # Optional idempotency key — flows through on every path (the x402
+        # payment adapter copies the original request's headers onto its paid
+        # retry), so a caller can safely retry a timed-out paid call.
+        extra_headers = {"Idempotency-Key": idempotency_key} if idempotency_key else {}
         attempt = 1
         while True:
             if self._use_credits:
@@ -172,10 +181,10 @@ class HoodGrowClient:
                 # credit balance" 402) and use a plain `requests.get` instead,
                 # same as get_credit_balance/list_credit_bundles below.
                 # Re-signed per attempt so a retry never replays a stale sig.
-                headers = self._sign_credit_auth_headers("GET", path)
+                headers = {**self._sign_credit_auth_headers("GET", path), **extra_headers}
                 res = requests.get(url, params=params, headers=headers)
             else:
-                res = self._session.get(url, params=params)
+                res = self._session.get(url, params=params, headers=extra_headers or None)
 
             if res.ok:
                 return res.json()
@@ -196,27 +205,45 @@ class HoodGrowClient:
                 body,
             )
 
-    def get_catalog(self) -> CatalogResponse:
+    def get_catalog(self, idempotency_key: str | None = None) -> CatalogResponse:
         """The full token catalog — every listed Robinhood Chain stock
         token, with price, corporate-action adjusted supply, and DeFi
-        depth. $0.10/call via x402, free with an API key."""
-        return CatalogResponse.model_validate(self._request("/api/agent/tokens"))
+        depth. $0.10/call via x402, free with an API key.
 
-    def get_token(self, symbol: str) -> TokenDetailResponse:
+        Pass ``idempotency_key`` (any unique, stable string) to safely retry
+        a timed-out PAID call: the server replays the first stored response
+        instead of charging again. Reuse a key only to retry the same call."""
+        return CatalogResponse.model_validate(
+            self._request("/api/agent/tokens", idempotency_key=idempotency_key)
+        )
+
+    def get_token(
+        self, symbol: str, idempotency_key: str | None = None
+    ) -> TokenDetailResponse:
         """One token by symbol, e.g. "NVDA" — same fields as a catalog
         entry, cheaper than fetching the whole catalog for a spot check.
         $0.05/call via x402, free with an API key. Raises
-        :class:`HoodGrowError` (status 404) for an unknown symbol."""
+        :class:`HoodGrowError` (status 404) for an unknown symbol.
+        ``idempotency_key`` makes a timed-out paid call safe to retry."""
         return TokenDetailResponse.model_validate(
-            self._request(f"/api/agent/token/{quote(symbol.upper())}")
+            self._request(
+                f"/api/agent/token/{quote(symbol.upper())}",
+                idempotency_key=idempotency_key,
+            )
         )
 
-    def get_corporate_actions(self, symbol: str | None = None) -> CorporateActions:
+    def get_corporate_actions(
+        self, symbol: str | None = None, idempotency_key: str | None = None
+    ) -> CorporateActions:
         """Corporate actions (splits, dividends, name changes). Pass a
         symbol to scope to one token (uses the cheaper single-token
         endpoint); omit it for every tracked token's corporate actions
         (uses the full-catalog endpoint)."""
-        data = self.get_token(symbol) if symbol else self.get_catalog()
+        data = (
+            self.get_token(symbol, idempotency_key=idempotency_key)
+            if symbol
+            else self.get_catalog(idempotency_key=idempotency_key)
+        )
         return CorporateActions(
             pending=data.pending_corporate_actions,
             recent=data.recent_corporate_actions,
@@ -231,6 +258,7 @@ class HoodGrowClient:
         to: str | None = None,
         limit: int | None = None,
         cursor: str | None = None,
+        idempotency_key: str | None = None,
     ) -> CorporateActionsFeedResponse:
         """One page of the filterable, cursor-paginated corporate-actions
         **event log** (``GET /api/corporate-actions``) — the cross-symbol
@@ -257,7 +285,11 @@ class HoodGrowClient:
         if cursor is not None:
             params["cursor"] = cursor
         return CorporateActionsFeedResponse.model_validate(
-            self._request("/api/corporate-actions", params=params or None)
+            self._request(
+                "/api/corporate-actions",
+                params=params or None,
+                idempotency_key=idempotency_key,
+            )
         )
 
     def iterate_corporate_actions(
@@ -295,17 +327,24 @@ class HoodGrowClient:
             if not cursor:
                 break
 
-    def get_defi(self, symbol: str) -> DefiDetailResponse:
+    def get_defi(
+        self, symbol: str, idempotency_key: str | None = None
+    ) -> DefiDetailResponse:
         """Every Morpho market this token participates in (loan OR
         collateral role) plus its Uniswap V3 pools — the full picture, not
         just the single best-APY figure bundled into ``get_catalog``/
         ``get_token``. $0.05/call via x402, free with an API key. Raises
         :class:`HoodGrowError` (status 404) for an unknown symbol."""
         return DefiDetailResponse.model_validate(
-            self._request(f"/api/agent/defi/{quote(symbol.upper())}")
+            self._request(
+                f"/api/agent/defi/{quote(symbol.upper())}",
+                idempotency_key=idempotency_key,
+            )
         )
 
-    def get_holders(self, symbol: str, limit: int | None = None) -> HoldersResponse:
+    def get_holders(
+        self, symbol: str, limit: int | None = None, idempotency_key: str | None = None
+    ) -> HoldersResponse:
         """Holder-count trend, 24h net total_supply change (real mint/burn
         — creation/redemption of the underlying tokenized shares, distinct
         from a corporate-action multiplier change), and top-holder
@@ -315,11 +354,19 @@ class HoodGrowClient:
         for an unknown symbol."""
         params = {"limit": limit} if limit is not None else None
         return HoldersResponse.model_validate(
-            self._request(f"/api/agent/holders/{quote(symbol.upper())}", params=params)
+            self._request(
+                f"/api/agent/holders/{quote(symbol.upper())}",
+                params=params,
+                idempotency_key=idempotency_key,
+            )
         )
 
     def get_slippage(
-        self, symbol: str, amount_usd: float, side: SlippageSide
+        self,
+        symbol: str,
+        amount_usd: float,
+        side: SlippageSide,
+        idempotency_key: str | None = None,
     ) -> SlippageResponse:
         """Price-impact / slippage estimate for a USD-sized trade, per
         Uniswap V3 pool this token trades on. ``side="buy"`` spends USDG
@@ -332,6 +379,7 @@ class HoodGrowClient:
             self._request(
                 f"/api/agent/slippage/{quote(symbol.upper())}",
                 params={"amountUsd": amount_usd, "side": side},
+                idempotency_key=idempotency_key,
             )
         )
 
@@ -342,6 +390,7 @@ class HoodGrowClient:
         from_: str | None = None,
         to: str | None = None,
         limit: int | None = None,
+        idempotency_key: str | None = None,
     ) -> OhlcResponse:
         """OHLC price candles for backtesting, bucketed from ~15-min price
         snapshots. Deliberately OHLC, not OHLCV — HoodGrow has no historical
@@ -358,10 +407,16 @@ class HoodGrowClient:
         if limit is not None:
             params["limit"] = limit
         return OhlcResponse.model_validate(
-            self._request(f"/api/agent/ohlc/{quote(symbol.upper())}", params=params)
+            self._request(
+                f"/api/agent/ohlc/{quote(symbol.upper())}",
+                params=params,
+                idempotency_key=idempotency_key,
+            )
         )
 
-    def get_base_tokens(self) -> BaseTokensResponse:
+    def get_base_tokens(
+        self, idempotency_key: str | None = None
+    ) -> BaseTokensResponse:
         """Base mainnet (chain 8453) B20 native-equity-token registry — a
         much smaller sibling of :meth:`get_catalog`. PRE-LAUNCH: check
         each token's ``status`` before treating it as tradable —
@@ -369,7 +424,9 @@ class HoodGrowClient:
         supply, so no price, no DEX liquidity, no holders exist for it
         yet; it flips to ``"live"`` automatically once real supply
         appears on-chain. $0.05/call via x402, free with an API key."""
-        return BaseTokensResponse.model_validate(self._request("/api/agent/base/tokens"))
+        return BaseTokensResponse.model_validate(
+            self._request("/api/agent/base/tokens", idempotency_key=idempotency_key)
+        )
 
     def list_credit_bundles(self) -> dict[str, CreditBundle]:
         """Lists the current prepaid credit bundles (id -> {price_usd,
