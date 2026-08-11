@@ -20,11 +20,13 @@ from .models import (
     CreditPurchaseAck,
     DefiDetailResponse,
     HoldersResponse,
+    MarketsResponse,
     OhlcInterval,
     OhlcResponse,
     SlippageResponse,
     SlippageSide,
     TokenDetailResponse,
+    TradesResponse,
 )
 
 DEFAULT_BASE_URL = "https://www.hoodgrow.com"
@@ -426,6 +428,49 @@ class HoodGrowClient:
         appears on-chain. $0.05/call via x402, free with an API key."""
         return BaseTokensResponse.model_validate(
             self._request("/api/agent/base/tokens", idempotency_key=idempotency_key)
+        )
+
+    def get_markets(
+        self, limit: int | None = None, idempotency_key: str | None = None
+    ) -> MarketsResponse:
+        """Market movers across the whole Robinhood Chain catalog — top
+        gainers and losers by 24h price change, highest 24h swap volume, and
+        deepest Uniswap V3 liquidity (TVL). ``limit`` caps each list (1-50,
+        default 10); gainers/losers can be empty when the market is flat.
+        $0.05/call via x402, free with an API key."""
+        params: dict[str, Any] = {}
+        if limit is not None:
+            params["limit"] = limit
+        return MarketsResponse.model_validate(
+            self._request(
+                "/api/agent/markets",
+                params=params,
+                idempotency_key=idempotency_key,
+            )
+        )
+
+    def get_trades(
+        self,
+        symbol: str | None = None,
+        limit: int | None = None,
+        idempotency_key: str | None = None,
+    ) -> TradesResponse:
+        """Recent large ("whale") trades in the stock-token Uniswap V3 pools,
+        newest first — each with a buy/sell ``side``, USD size, and
+        ``tx_hash``. Pass ``symbol`` to scope to one token (omit for the
+        global feed); ``limit`` caps the list (1-100, default 20).
+        $0.05/call via x402, free with an API key."""
+        params: dict[str, Any] = {}
+        if symbol is not None:
+            params["symbol"] = symbol.upper()
+        if limit is not None:
+            params["limit"] = limit
+        return TradesResponse.model_validate(
+            self._request(
+                "/api/agent/trades",
+                params=params,
+                idempotency_key=idempotency_key,
+            )
         )
 
     def list_credit_bundles(self) -> dict[str, CreditBundle]:
