@@ -148,6 +148,47 @@ constant-time, accepts the header with or without the `sha256=` prefix, and
 returns `False` (never raises) for a missing header, malformed signature, or
 any mismatch.
 
+## Agent-framework tools
+
+Wire HoodGrow into any function-calling agent. The SDK ships the same eight
+read tools the [`hoodgrow-mcp`](https://github.com/MeMikko/hoodgrow-mcp) server
+exposes — as **framework-agnostic definitions** (name + description + JSON
+Schema) plus a dispatcher — with zero extra dependencies:
+
+```python
+from hoodgrow import (
+    HoodGrowClient,
+    HOODGROW_TOOLS,          # list of {name, description, parameters (JSON Schema)}
+    execute_hoodgrow_tool,   # (client, name, args=None, idempotency_key=None) -> result
+    hoodgrow_openai_tools,   # OpenAI `tools` format
+    hoodgrow_anthropic_tools,# Anthropic `tools` format (input_schema)
+)
+```
+
+**OpenAI** — pass the tools in, dispatch each call:
+
+```python
+import json
+
+client = HoodGrowClient(api_key=os.environ["HOODGROW_API_KEY"])
+res = openai.chat.completions.create(
+    model="gpt-4o", messages=messages, tools=hoodgrow_openai_tools()
+)
+for call in res.choices[0].message.tool_calls or []:
+    result = execute_hoodgrow_tool(client, call.function.name, json.loads(call.function.arguments))
+    # feed `result` back as a tool message…
+```
+
+**Anthropic** — same idea with `hoodgrow_anthropic_tools()` and `tool_use` blocks.
+
+**LangChain** — wrap each definition as a `StructuredTool` whose `func` calls
+the dispatcher; **CrewAI** — subclass `BaseTool` the same way. Both just call
+`execute_hoodgrow_tool(client, name, args)` and JSON-encode the result.
+
+`execute_hoodgrow_tool` returns the same Pydantic response the matching client
+method returns, raises `HoodGrowError` on an API failure, and takes an optional
+`idempotency_key`.
+
 ## Payment safety
 
 x402 payments are real money and are **not** idempotent — retrying a timed-
