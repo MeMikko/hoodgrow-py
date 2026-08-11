@@ -356,3 +356,82 @@ class CreditBalance(_HoodGrowModel):
 
     wallet_address: str = Field(alias="walletAddress")
     balance_usd: float = Field(alias="balanceUsd")
+
+
+#: A corporate-action event's stage in the ``/api/corporate-actions`` feed.
+#: ``staged``/``applied``/``paused`` are on-chain ERC-8056 transitions;
+#: ``rhj_ledger`` is the official Robinhood ledger record (dividends etc.).
+CorporateActionFeedStatus = Literal["staged", "applied", "paused", "rhj_ledger"]
+
+#: Where a feed event came from — an on-chain read, or the RHJ registry.
+CorporateActionSource = Literal["onchain", "rhj_registry"]
+
+
+class CorporateActionEvent(_HoodGrowModel):
+    """One event in the filterable, paginated ``/api/corporate-actions`` feed
+    — distinct from the pending/recent bundle on a token
+    (:meth:`hoodgrow.HoodGrowClient.get_corporate_actions`): this is the
+    cross-symbol append-only event log with its own detection metadata
+    (``block_number``, ``transaction_hash``, ``detected_at``,
+    ``freshness_seconds``)."""
+
+    symbol: str
+    contract: str
+    type: CorporateActionFeedStatus
+    action_type: str | None = Field(None, alias="actionType")
+    multiplier_from: float | None = Field(None, alias="multiplierFrom")
+    multiplier_to: float | None = Field(None, alias="multiplierTo")
+    execution_date: str | None = Field(None, alias="executionDate")
+    detected_at: str = Field(alias="detectedAt")
+    last_updated: str = Field(alias="lastUpdated")
+    #: Seconds since ``last_updated``, computed at response time.
+    freshness_seconds: int = Field(alias="freshnessSeconds")
+    block_number: int | None = Field(None, alias="blockNumber")
+    transaction_hash: str | None = Field(None, alias="transactionHash")
+    source: CorporateActionSource
+
+
+class CorporateActionsPagination(_HoodGrowModel):
+    #: Opaque cursor for the next page, or ``None`` on the last page.
+    next_cursor: str | None = Field(None, alias="nextCursor")
+    limit: int
+
+
+class CorporateActionsFeedResponse(_HoodGrowModel):
+    """``GET /api/corporate-actions`` — one page of the corporate-actions
+    event log. Use ``pagination.next_cursor`` (or
+    :meth:`hoodgrow.HoodGrowClient.iterate_corporate_actions`) to page
+    through the rest."""
+
+    chain_id: int = Field(alias="chainId")
+    updated_at: str = Field(alias="updatedAt")
+    actions: list[CorporateActionEvent]
+    pagination: CorporateActionsPagination
+
+
+class WebhookEvent(_HoodGrowModel):
+    """The JSON body HoodGrow POSTs to a registered webhook URL when a
+    corporate action is staged, oracle-paused, or applied on-chain. Verify
+    :func:`hoodgrow.verify_webhook_signature` before trusting it.
+
+    ``event`` is typed ``str`` (not a closed set) so a newly-added event type
+    never breaks parsing; the current values are ``corporate_action.staged``,
+    ``corporate_action.paused``, ``corporate_action.applied``, and
+    ``webhook.test``."""
+
+    #: Unique per delivery — safe to dedupe on, and the same ``id`` returned
+    #: by ``GET /api/builder/webhooks`` for reconciliation.
+    id: str
+    event: str
+    symbol: str
+    #: Multiplier before this event. ``None`` for ``paused``, and for
+    #: ``applied`` if the prior value was never observed.
+    current_multiplier: float | None = Field(None, alias="currentMultiplier")
+    #: Multiplier this event moves to — staged value for ``staged``, now-live
+    #: value for ``applied``, ``None`` for ``paused``.
+    staged_multiplier: float | None = Field(None, alias="stagedMultiplier")
+    #: ISO. For ``staged``, the future instant it takes effect; for
+    #: ``applied``, when it took effect; ``None`` for ``paused``.
+    effective_at: str | None = Field(None, alias="effectiveAt")
+    #: ISO — when HoodGrow emitted the event.
+    ts: str

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Iterator
 from urllib.parse import quote
 
 import requests
@@ -11,7 +11,10 @@ import requests
 from .models import (
     BaseTokensResponse,
     CatalogResponse,
+    CorporateActionEvent,
+    CorporateActionFeedStatus,
     CorporateActions,
+    CorporateActionsFeedResponse,
     CreditBalance,
     CreditBundle,
     CreditPurchaseAck,
@@ -27,6 +30,22 @@ from .models import (
 DEFAULT_BASE_URL = "https://www.hoodgrow.com"
 #: Base mainnet, CAIP-2 form — the only network HoodGrow's x402 paywall accepts.
 NETWORK = "eip155:8453"
+#: Upper bound on any single 429 backoff wait, so a hostile/huge Retry-After
+#: can't hang a caller indefinitely.
+MAX_RETRY_DELAY_S = 30.0
+
+
+def _retry_after_seconds(header: str | None, attempt: int) -> float:
+    """Delay before a 429 retry: honor ``Retry-After`` (seconds) when present
+    and sane, else exponential backoff (0.5s, 1s, 2s, …), both capped."""
+    if header:
+        try:
+            seconds = float(header)
+        except ValueError:
+            seconds = -1.0
+        if seconds >= 0:
+            return min(seconds, MAX_RETRY_DELAY_S)
+    return min(0.5 * (2 ** (attempt - 1)), MAX_RETRY_DELAY_S)
 
 
 class HoodGrowError(Exception):
@@ -50,6 +69,7 @@ class HoodGrowClient:
         signer: Any | None = None,
         base_url: str = DEFAULT_BASE_URL,
         use_credits: bool = False,
+        max_retries: int = 0,
     ) -> None:
         """
         Args:
@@ -78,11 +98,22 @@ class HoodGrowClient:
                 credits for this wallet (calling with an empty balance
                 fails with a 402 :class:`HoodGrowError` instead of falling
                 back to x402). Ignored when ``api_key`` is set.
+            max_retries: Auto-retry ``429 Too Many Requests`` this many
+                times, honoring the response's ``Retry-After`` header
+                (capped, with a small exponential fallback). Defaults to
+                ``0`` (no retry). **Only applied on the bearer ``api_key``
+                path**, where calls are free and safe to repeat — it is
+                deliberately ignored for the ``signer`` (x402) and credit
+                paths, because an x402 payment is not idempotent and a blind
+                retry after a paid call can pay twice. There, a ``429``
+                raises immediately.
         """
         self._base_url = base_url.rstrip("/")
         self._session = requests.Session()
         self._signer = signer
         self._use_credits = bool(use_credits and signer is not None and not api_key)
+        self._using_api_key = bool(api_key)
+        self._max_retries = max(0, int(max_retries))
 
         if api_key:
             self._session.headers["Authorization"] = f"Bearer {api_key}"
@@ -128,17 +159,32 @@ class HoodGrowClient:
         }
 
     def _request(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        if self._use_credits:
-            # A credit-spend call is NOT an x402 payment — it must bypass
-            # self._session (wrapRequestsWithPayment patched it to handle
-            # x402 challenges, which would misinterpret an "insufficient
-            # credit balance" 402) and use a plain `requests.get` instead,
-            # same as get_credit_balance/list_credit_bundles below.
-            headers = self._sign_credit_auth_headers("GET", path)
-            res = requests.get(f"{self._base_url}{path}", params=params, headers=headers)
-        else:
-            res = self._session.get(f"{self._base_url}{path}", params=params)
-        if not res.ok:
+        url = f"{self._base_url}{path}"
+        # Retry a 429 ONLY on the free bearer path. x402/credit calls are not
+        # idempotent (a retry can pay twice / re-spend), so they get one shot.
+        max_attempts = self._max_retries + 1 if self._using_api_key else 1
+        attempt = 1
+        while True:
+            if self._use_credits:
+                # A credit-spend call is NOT an x402 payment — it must bypass
+                # self._session (wrapRequestsWithPayment patched it to handle
+                # x402 challenges, which would misinterpret an "insufficient
+                # credit balance" 402) and use a plain `requests.get` instead,
+                # same as get_credit_balance/list_credit_bundles below.
+                # Re-signed per attempt so a retry never replays a stale sig.
+                headers = self._sign_credit_auth_headers("GET", path)
+                res = requests.get(url, params=params, headers=headers)
+            else:
+                res = self._session.get(url, params=params)
+
+            if res.ok:
+                return res.json()
+
+            if res.status_code == 429 and attempt < max_attempts:
+                time.sleep(_retry_after_seconds(res.headers.get("Retry-After"), attempt))
+                attempt += 1
+                continue
+
             body: Any = None
             try:
                 body = res.json()
@@ -149,7 +195,6 @@ class HoodGrowClient:
                 res.status_code,
                 body,
             )
-        return res.json()
 
     def get_catalog(self) -> CatalogResponse:
         """The full token catalog — every listed Robinhood Chain stock
@@ -176,6 +221,79 @@ class HoodGrowClient:
             pending=data.pending_corporate_actions,
             recent=data.recent_corporate_actions,
         )
+
+    def get_corporate_actions_feed(
+        self,
+        symbol: str | None = None,
+        contract: str | None = None,
+        status: CorporateActionFeedStatus | None = None,
+        from_: str | None = None,
+        to: str | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> CorporateActionsFeedResponse:
+        """One page of the filterable, cursor-paginated corporate-actions
+        **event log** (``GET /api/corporate-actions``) — the cross-symbol
+        append-only feed with detection metadata (block, tx hash,
+        ``detected_at``), distinct from the pending/recent bundle
+        :meth:`get_corporate_actions` returns for a single token. Filter by
+        ``symbol``/``contract``/``status`` and an ISO ``from_``/``to`` range;
+        page with ``pagination.next_cursor``, or use
+        :meth:`iterate_corporate_actions` to walk every page automatically.
+        $0.05/call via x402, free with an API key."""
+        params: dict[str, Any] = {}
+        if symbol is not None:
+            params["symbol"] = symbol
+        if contract is not None:
+            params["contract"] = contract
+        if status is not None:
+            params["status"] = status
+        if from_ is not None:
+            params["from"] = from_
+        if to is not None:
+            params["to"] = to
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        return CorporateActionsFeedResponse.model_validate(
+            self._request("/api/corporate-actions", params=params or None)
+        )
+
+    def iterate_corporate_actions(
+        self,
+        symbol: str | None = None,
+        contract: str | None = None,
+        status: CorporateActionFeedStatus | None = None,
+        from_: str | None = None,
+        to: str | None = None,
+        limit: int | None = None,
+    ) -> Iterator[CorporateActionEvent]:
+        """Iterate over EVERY corporate-action event matching the filter,
+        transparently following ``next_cursor`` across pages::
+
+            for action in client.iterate_corporate_actions(status="staged"):
+                ...
+
+        Note each page is a separate billed request on the x402/credit
+        paths, so a broad filter can fan out into many paid calls; narrow
+        with ``from_``/``to``/``symbol``, or break out of the loop early."""
+        cursor: str | None = None
+        while True:
+            page = self.get_corporate_actions_feed(
+                symbol=symbol,
+                contract=contract,
+                status=status,
+                from_=from_,
+                to=to,
+                limit=limit,
+                cursor=cursor,
+            )
+            for action in page.actions:
+                yield action
+            cursor = page.pagination.next_cursor
+            if not cursor:
+                break
 
     def get_defi(self, symbol: str) -> DefiDetailResponse:
         """Every Morpho market this token participates in (loan OR

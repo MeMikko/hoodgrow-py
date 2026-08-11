@@ -82,6 +82,7 @@ HoodGrowClient(
     signer: LocalAccount | None = None,
     base_url: str = "https://www.hoodgrow.com",
     use_credits: bool = False,  # spend prepaid credit instead of x402 per call — requires signer + buy_credits() first
+    max_retries: int = 0,       # auto-retry 429s (Retry-After aware). Bearer path only — never on x402/credit (would risk paying twice)
 )
 ```
 
@@ -92,6 +93,8 @@ Exactly one of `api_key` / `signer` is required.
 | `get_catalog()` | $0.10 | Every listed token: price, source, 24h change, corporate-action adjusted supply, DeFi depth, plus catalog-wide pending/recent corporate actions |
 | `get_token(symbol)` | $0.05 | One token, same fields, scoped |
 | `get_corporate_actions(symbol=None)` | uses `get_token`/`get_catalog` above | `CorporateActions(pending=..., recent=...)` — pass a symbol to scope, omit for every tracked token |
+| `get_corporate_actions_feed(symbol=None, contract=None, status=None, from_=None, to=None, limit=None, cursor=None)` | $0.05 | One page of the filterable, cursor-paginated corporate-actions **event log** — the cross-symbol append-only feed with detection metadata (block, tx hash, `detected_at`), distinct from the pending/recent bundle above |
+| `iterate_corporate_actions(symbol=None, contract=None, status=None, from_=None, to=None, limit=None)` | $0.05 / page | Generator over **every** event matching the filter, auto-following `next_cursor` — `for a in client.iterate_corporate_actions(status="staged"): ...`. Each page is a separate billed call on x402/credit; narrow with `from_`/`to`/`symbol` |
 | `get_defi(symbol)` | $0.05 | Every Morpho market this token participates in (loan OR collateral role) plus its Uniswap V3 pools — not just the single best-APY figure bundled into `get_catalog`/`get_token` |
 | `get_holders(symbol, limit=None)` | $0.05 | Holder-count trend, 24h net supply change (real mint/burn), and top-holder concentration (`limit` caps how many holders to return, 1-50, defaults to 10 server-side) |
 | `get_slippage(symbol, amount_usd, side)` | $0.05 | How much a USD-sized trade (`side: "buy" \| "sell"`) would move the price, per Uniswap V3 pool — `best_pool_address`/`best_effective_price` pick the best one for you |
@@ -107,13 +110,43 @@ Full response shapes are [Pydantic](https://docs.pydantic.dev) models
 `DefiMarket`, `DefiPool`, `HoldersResponse`, `TopHolder`, `SupplyChange24h`,
 `SlippageResponse`, `SlippagePoolResult`, `OhlcResponse`, `OhlcCandle`,
 `OhlcInterval`, `BaseTokensResponse`, `BaseToken`, `BaseTokenStatus`,
-`CreditBundle`, `CreditPurchaseAck`, `CreditBalance`) —
+`CreditBundle`, `CreditPurchaseAck`, `CreditBalance`, `CorporateActionEvent`,
+`CorporateActionsFeedResponse`, `WebhookEvent`) —
 attributes are idiomatic `snake_case`; the API's own `camelCase` JSON keys
 also work if you construct a model directly.
 
 A failed request (any non-2xx HoodGrow itself returns, after x402 payment
 handling — an unknown symbol, a server error) raises `HoodGrowError` with
 `.status` and `.body`.
+
+## Webhooks
+
+Subscribe to corporate-action events instead of polling: register a webhook
+(a Builder key's `webhookUrl`, or the credit-funded `POST
+/api/agent/credits/webhook`) and HoodGrow POSTs each `corporate_action.*`
+event to your URL, signed `x-hoodgrow-signature: sha256=<hex>`. **Verify that
+signature before trusting the body** — this SDK ships the check so you don't
+hand-roll the HMAC:
+
+```python
+from hoodgrow import verify_webhook_signature, WebhookEvent
+
+# Flask — verify against the RAW body, not the parsed JSON (re-serializing breaks the digest):
+@app.post("/hooks")
+def hooks():
+    if not verify_webhook_signature(
+        request.get_data(), request.headers.get("x-hoodgrow-signature"), WEBHOOK_SECRET
+    ):
+        return "", 401
+    event = WebhookEvent.model_validate_json(request.get_data())
+    # event.event -> "corporate_action.staged" | "corporate_action.paused" | "corporate_action.applied" | "webhook.test"
+    return "", 200
+```
+
+`verify_webhook_signature(raw_body, signature_header, secret)` is
+constant-time, accepts the header with or without the `sha256=` prefix, and
+returns `False` (never raises) for a missing header, malformed signature, or
+any mismatch.
 
 ## Payment safety
 
@@ -135,6 +168,16 @@ out request can pay twice. Before pointing a signer at this client:
 30 requests/minute per IP by default for pay-per-call use. A `429` means
 back off — check the response's `Retry-After` header rather than retrying
 immediately (a blind retry after a paid call risks a duplicate payment).
+
+On the **bearer `api_key`** path (free, idempotent), pass `max_retries` to
+have the client back off and retry `429`s for you, honoring `Retry-After`:
+
+```python
+client = HoodGrowClient(api_key=os.environ["HOODGROW_API_KEY"], max_retries=3)
+```
+
+`max_retries` is deliberately **ignored on the x402/credit paths** — those
+calls aren't idempotent, so the client never auto-retries a paid request.
 Need more sustained throughput? A persistent API key with its own higher
 limit is available — see
 [hoodgrow.com/api-access](https://www.hoodgrow.com/api-access).
