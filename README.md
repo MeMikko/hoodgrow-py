@@ -105,6 +105,7 @@ Exactly one of `api_key` / `signer` is required.
 | `list_credit_bundles()` | free | Current prepaid credit bundle catalog (`{id: CreditBundle(price_usd, credit_usd)}`) — no auth required |
 | `buy_credits(bundle_id)` | one x402 payment | Pays for one bundle; requires `signer`. Balance lands once settlement confirms — see `get_credit_balance()` |
 | `get_credit_balance()` | free | This wallet's current credit balance; requires `signer` |
+| `register_credit_webhook(url, symbols=None)` | free to register, then per delivered event | Register a credit-funded corporate-action webhook; requires `signer`. `symbols` restricts delivery (and billing) to those symbols — omit for all. Returns a `CreditWebhookRegistration` (`webhook_url`, `webhook_secret`, `webhook_symbols`, `note`) |
 
 Full response shapes are [Pydantic](https://docs.pydantic.dev) models
 (`CatalogResponse`, `TokenDetailResponse`, `TokenSummary`, `DefiInfo`,
@@ -113,7 +114,8 @@ Full response shapes are [Pydantic](https://docs.pydantic.dev) models
 `SlippageResponse`, `SlippagePoolResult`, `OhlcResponse`, `OhlcCandle`,
 `OhlcInterval`, `BaseTokensResponse`, `BaseToken`, `BaseTokenStatus`,
 `MarketsResponse`, `MarketToken`, `TradesResponse`, `Trade`, `TradeSide`,
-`CreditBundle`, `CreditPurchaseAck`, `CreditBalance`, `CorporateActionEvent`,
+`CreditBundle`, `CreditPurchaseAck`, `CreditBalance`,
+`CreditWebhookRegistration`, `CorporateActionEvent`,
 `CorporateActionsFeedResponse`, `WebhookEvent`) —
 attributes are idiomatic `snake_case`; the API's own `camelCase` JSON keys
 also work if you construct a model directly.
@@ -127,9 +129,27 @@ handling — an unknown symbol, a server error) raises `HoodGrowError` with
 Subscribe to corporate-action events instead of polling: register a webhook
 (a Builder key's `webhookUrl`, or the credit-funded `POST
 /api/agent/credits/webhook`) and HoodGrow POSTs each `corporate_action.*`
-event to your URL, signed `x-hoodgrow-signature: sha256=<hex>`. **Verify that
-signature before trusting the body** — this SDK ships the check so you don't
-hand-roll the HMAC:
+event to your URL, signed `x-hoodgrow-signature: sha256=<hex>`.
+
+**Register the credit-funded webhook straight from the SDK** — `signer` only,
+no signup. Registering is free; you're billed per delivered event against your
+prepaid balance. `symbols` narrows both delivery *and* billing to the tokens
+you care about (omit for all):
+
+```python
+client = HoodGrowClient(signer=signer)
+reg = client.register_credit_webhook(
+    "https://your-domain.com/hooks/hoodgrow",
+    symbols=["NVDA", "INTC"],  # omit for every token's events
+)
+# Store reg.webhook_secret — it signs every delivery (verify it below). Shown once.
+```
+
+(A Builder-subscription webhook is set from the website instead — it uses
+wallet-session auth, not this SDK's signer.)
+
+**Verify the signature before trusting a delivered body** — this SDK ships the
+check so you don't hand-roll the HMAC:
 
 ```python
 from hoodgrow import verify_webhook_signature, WebhookEvent
