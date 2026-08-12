@@ -495,6 +495,72 @@ def test_get_credit_balance_signs_the_canonical_message_and_sends_credit_auth_he
     assert int(req.headers["X-HoodGrow-Credit-Timestamp"]) > 0
 
 
+def test_register_credit_webhook_requires_a_signer():
+    client = HoodGrowClient(api_key="test-key-123")
+    with pytest.raises(ValueError, match="requires a `signer`"):
+        client.register_credit_webhook("https://example.com/hook")
+
+
+@responses.activate
+def test_register_credit_webhook_posts_url_and_symbols_with_credit_auth_headers():
+    import json
+
+    responses.add(
+        responses.POST,
+        f"{BASE}/api/agent/credits/webhook",
+        json={
+            "ok": True,
+            "webhookUrl": "https://example.com/hook",
+            "webhookSecret": "whsec_abc123",
+            "webhookSymbols": "NVDA,INTC",
+            "note": "billed per event",
+        },
+        status=200,
+    )
+
+    client = HoodGrowClient(signer=TEST_ACCOUNT)
+    reg = client.register_credit_webhook(
+        "https://example.com/hook", symbols=["NVDA", "INTC"]
+    )
+
+    assert reg.webhook_secret == "whsec_abc123"
+    assert reg.webhook_symbols == "NVDA,INTC"
+    req = responses.calls[0].request
+    assert req.method == "POST"
+    assert req.headers["X-HoodGrow-Credit-Wallet"] == TEST_ACCOUNT.address
+    assert req.headers["X-HoodGrow-Credit-Signature"].startswith("0x")
+    assert json.loads(req.body) == {
+        "webhookUrl": "https://example.com/hook",
+        "webhookSymbols": ["NVDA", "INTC"],
+    }
+
+
+@responses.activate
+def test_register_credit_webhook_omits_symbols_when_not_given():
+    import json
+
+    responses.add(
+        responses.POST,
+        f"{BASE}/api/agent/credits/webhook",
+        json={
+            "ok": True,
+            "webhookUrl": "https://example.com/hook",
+            "webhookSecret": "whsec_abc123",
+            "webhookSymbols": None,
+            "note": "billed per event",
+        },
+        status=200,
+    )
+
+    client = HoodGrowClient(signer=TEST_ACCOUNT)
+    reg = client.register_credit_webhook("https://example.com/hook")
+
+    assert reg.webhook_symbols is None
+    assert json.loads(responses.calls[0].request.body) == {
+        "webhookUrl": "https://example.com/hook"
+    }
+
+
 @responses.activate
 def test_use_credits_attaches_signed_headers_to_a_metered_get():
     responses.add(

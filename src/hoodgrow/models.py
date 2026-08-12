@@ -431,6 +431,26 @@ class CreditBalance(_HoodGrowModel):
     balance_usd: float = Field(alias="balanceUsd")
 
 
+class CreditWebhookRegistration(_HoodGrowModel):
+    """``POST /api/agent/credits/webhook`` response — the registered
+    credit-funded corporate-action webhook. Registering is free; each
+    delivered event is billed per-event against the wallet's prepaid credit
+    balance. See :meth:`hoodgrow.HoodGrowClient.register_credit_webhook`."""
+
+    ok: bool
+    #: The stored HTTPS delivery URL.
+    webhook_url: str = Field(alias="webhookUrl")
+    #: HMAC-SHA256 secret that signs deliveries (``x-hoodgrow-signature``) —
+    #: pass it to :func:`hoodgrow.verify_webhook_signature`. Shown here; store
+    #: it.
+    webhook_secret: str = Field(alias="webhookSecret")
+    #: The stored symbol filter as a comma-separated list, or ``None`` for all
+    #: symbols.
+    webhook_symbols: str | None = Field(None, alias="webhookSymbols")
+    #: Human-readable note about the per-event billing model.
+    note: str
+
+
 #: A corporate-action event's stage in the ``/api/corporate-actions`` feed.
 #: ``staged``/``applied``/``paused`` are on-chain ERC-8056 transitions;
 #: ``rhj_ledger`` is the official Robinhood ledger record (dividends etc.).

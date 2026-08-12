@@ -19,6 +19,7 @@ from .models import (
     CreditBalance,
     CreditBundle,
     CreditPurchaseAck,
+    CreditWebhookRegistration,
     DefiDetailResponse,
     DefiInfo,
     DefiMarket,
@@ -54,7 +55,7 @@ from .tools import (
 )
 from .webhooks import verify_webhook_signature
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
 __all__ = [
     "HoodGrowClient",
@@ -78,6 +79,7 @@ __all__ = [
     "CreditBalance",
     "CreditBundle",
     "CreditPurchaseAck",
+    "CreditWebhookRegistration",
     "DefiDetailResponse",
     "DefiInfo",
     "DefiMarket",

@@ -18,6 +18,7 @@ from .models import (
     CreditBalance,
     CreditBundle,
     CreditPurchaseAck,
+    CreditWebhookRegistration,
     DefiDetailResponse,
     HoldersResponse,
     MarketsResponse,
@@ -536,3 +537,51 @@ class HoodGrowClient:
                 body,
             )
         return CreditBalance.model_validate(res.json())
+
+    def register_credit_webhook(
+        self,
+        url: str,
+        symbols: list[str] | None = None,
+    ) -> CreditWebhookRegistration:
+        """Register (or update) a credit-funded corporate-action webhook for
+        this wallet. HoodGrow then POSTs each matching ``corporate_action.*``
+        event to ``url``, signed with the returned ``webhook_secret`` — verify
+        every delivery with :func:`hoodgrow.verify_webhook_signature` before
+        trusting it. Requires ``signer``.
+
+        Registering is FREE (no credit spend here); each delivered event is
+        billed per-event against this wallet's prepaid credit balance (see
+        :meth:`buy_credits`/:meth:`get_credit_balance`), so an idle webhook
+        that never fires costs nothing. A different ``url`` mints a fresh
+        secret.
+
+        ``symbols`` restricts delivery — and, since billing is per delivered
+        event, what you're charged for — to just those symbols. Pass ``None``
+        (or an empty list) to receive every token's events (the default).
+
+        This is the credit-funded path only. A Builder-subscription webhook is
+        set from the website (it uses wallet-session auth, not this SDK's
+        ``signer``), so there's no SDK method for it."""
+        if self._signer is None:
+            raise ValueError("register_credit_webhook requires a `signer`")
+        path = "/api/agent/credits/webhook"
+        headers = {
+            "Content-Type": "application/json",
+            **self._sign_credit_auth_headers("POST", path),
+        }
+        payload: dict[str, Any] = {"webhookUrl": url}
+        if symbols is not None:
+            payload["webhookSymbols"] = symbols
+        res = requests.post(f"{self._base_url}{path}", headers=headers, json=payload)
+        if not res.ok:
+            body: Any = None
+            try:
+                body = res.json()
+            except ValueError:
+                pass
+            raise HoodGrowError(
+                f"failed to register credit webhook: {res.status_code} {res.reason}",
+                res.status_code,
+                body,
+            )
+        return CreditWebhookRegistration.model_validate(res.json())
