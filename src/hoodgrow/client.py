@@ -37,6 +37,10 @@ NETWORK = "eip155:8453"
 #: Upper bound on any single 429 backoff wait, so a hostile/huge Retry-After
 #: can't hang a caller indefinitely.
 MAX_RETRY_DELAY_S = 30.0
+#: Default per-request timeout. `requests` has NO timeout by default, so
+#: without this a hung connection blocks the calling agent loop forever —
+#: the exact failure mode an autonomous caller can't recover from.
+DEFAULT_TIMEOUT_S = 30.0
 
 
 def _retry_after_seconds(header: str | None, attempt: int) -> float:
@@ -75,6 +79,7 @@ class HoodGrowClient:
         use_credits: bool = False,
         max_retries: int = 0,
         user_agent: str | None = None,
+        timeout: float | None = DEFAULT_TIMEOUT_S,
     ) -> None:
         """
         Args:
@@ -118,6 +123,15 @@ class HoodGrowClient:
                 paths, because an x402 payment is not idempotent and a blind
                 retry after a paid call can pay twice. There, a ``429``
                 raises immediately.
+            timeout: Per-request timeout in seconds, applied to every HTTP
+                call this client makes (connect + read). Defaults to
+                ``DEFAULT_TIMEOUT_S`` (30s). Pass ``None`` to disable and
+                restore requests' wait-forever behavior — almost never what
+                an agent loop wants, since a single hung connection then
+                blocks it indefinitely. Note a timeout can fire AFTER the
+                server started processing: on the paid paths, pair retries
+                with ``idempotency_key`` so a timed-out call is safe to
+                re-send without paying twice.
         """
         self._base_url = base_url.rstrip("/")
         self._session = requests.Session()
@@ -132,6 +146,7 @@ class HoodGrowClient:
         self._use_credits = bool(use_credits and signer is not None and not api_key)
         self._using_api_key = bool(api_key)
         self._max_retries = max(0, int(max_retries))
+        self._timeout = timeout
 
         if api_key:
             self._session.headers["Authorization"] = f"Bearer {api_key}"
@@ -200,9 +215,16 @@ class HoodGrowClient:
                 # same as get_credit_balance/list_credit_bundles below.
                 # Re-signed per attempt so a retry never replays a stale sig.
                 headers = {**self._sign_credit_auth_headers("GET", path), **extra_headers}
-                res = requests.get(url, params=params, headers=headers)
+                res = requests.get(
+                    url, params=params, headers=headers, timeout=self._timeout
+                )
             else:
-                res = self._session.get(url, params=params, headers=extra_headers or None)
+                res = self._session.get(
+                    url,
+                    params=params,
+                    headers=extra_headers or None,
+                    timeout=self._timeout,
+                )
 
             if res.ok:
                 return res.json()
@@ -494,7 +516,9 @@ class HoodGrowClient:
         credit_usd}) — no payment, no auth, works without a ``signer`` or
         ``api_key`` at all. See :meth:`buy_credits` to actually purchase
         one."""
-        res = requests.get(f"{self._base_url}/api/agent/credits/purchase")
+        res = requests.get(
+            f"{self._base_url}/api/agent/credits/purchase", timeout=self._timeout
+        )
         if not res.ok:
             raise HoodGrowError(
                 f"failed to list credit bundles: {res.status_code} {res.reason}",
@@ -518,6 +542,7 @@ class HoodGrowClient:
         res = self._session.post(
             f"{self._base_url}/api/agent/credits/purchase",
             params={"bundle": bundle_id},
+            timeout=self._timeout,
         )
         if not res.ok:
             body: Any = None
@@ -539,7 +564,9 @@ class HoodGrowClient:
         ``signer``."""
         path = "/api/agent/credits/balance"
         headers = self._sign_credit_auth_headers("GET", path)
-        res = requests.get(f"{self._base_url}{path}", headers=headers)
+        res = requests.get(
+            f"{self._base_url}{path}", headers=headers, timeout=self._timeout
+        )
         if not res.ok:
             body: Any = None
             try:
@@ -587,7 +614,12 @@ class HoodGrowClient:
         payload: dict[str, Any] = {"webhookUrl": url}
         if symbols is not None:
             payload["webhookSymbols"] = symbols
-        res = requests.post(f"{self._base_url}{path}", headers=headers, json=payload)
+        res = requests.post(
+            f"{self._base_url}{path}",
+            headers=headers,
+            json=payload,
+            timeout=self._timeout,
+        )
         if not res.ok:
             body: Any = None
             try:

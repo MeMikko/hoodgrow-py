@@ -1,0 +1,57 @@
+name: CI
+
+# Runs the test suite on every PR and push to main. Before this existed the
+# only workflow was publish.yml (release-time only, and it never ran pytest),
+# so a broken commit — like the requires-python 3.9 claim the package could
+# not actually import under — had nothing to catch it before PyPI.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # The test suite needs 3.11+ (tests/test_client.py imports tomllib);
+        # the 3.10 floor is covered by the floor-import job below.
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - run: pip install -e ".[dev]"
+
+      - run: python -m pytest tests/ -q
+
+  # requires-python says >=3.10, so prove the package at least IMPORTS there.
+  # This is exactly the check that would have caught the runtime PEP 604
+  # union that made `import hoodgrow` raise TypeError on 3.9 while the
+  # metadata still advertised 3.9 support.
+  floor-import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - run: pip install -e .
+
+      - run: python -c "import hoodgrow; print(hoodgrow.__version__)"
