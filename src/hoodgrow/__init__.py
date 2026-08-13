@@ -55,7 +55,7 @@ from .tools import (
 )
 from .webhooks import verify_webhook_signature
 
-__version__ = "0.11.0"
+from ._version import __version__
 
 __all__ = [
     "HoodGrowClient",

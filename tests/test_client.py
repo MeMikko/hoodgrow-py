@@ -5,6 +5,7 @@ import pytest
 import responses
 from eth_account import Account
 
+import hoodgrow
 from hoodgrow import HoodGrowClient, HoodGrowError, verify_webhook_signature
 
 BASE = "https://www.hoodgrow.com"
@@ -809,3 +810,32 @@ def test_idempotency_key_on_trailing_param_methods():
     req = responses.calls[0].request
     assert req.headers.get("Idempotency-Key") == "hold-1"
     assert "limit=10" in req.url
+
+
+def test_version_matches_pyproject() -> None:
+    """The version in the User-Agent must be the version actually shipped.
+
+    The sibling MCP package reported 0.4.0 while shipping 0.7.1 — three
+    releases of drift, invisible because nothing compared the two. This number
+    goes out on every request and is how the API attributes traffic to real
+    SDK integrations rather than crawlers, so a stale value misattributes the
+    exact signal it exists to carry.
+    """
+    import tomllib
+    from pathlib import Path
+
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    with pyproject.open("rb") as fh:
+        declared = tomllib.load(fh)["project"]["version"]
+
+    assert hoodgrow.__version__ == declared
+
+
+def test_client_identifies_itself_on_every_request() -> None:
+    """Without this header the API cannot tell an integration from a probe.
+
+    requests' default User-Agent is generic, so these calls previously landed
+    in the same unattributed bucket as anonymous crawlers.
+    """
+    client = HoodGrowClient(api_key="test-key")
+    assert client._session.headers["User-Agent"] == f"hoodgrow-py/{hoodgrow.__version__}"

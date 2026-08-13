@@ -8,6 +8,7 @@ from urllib.parse import quote
 
 import requests
 
+from ._version import __version__
 from .models import (
     BaseTokensResponse,
     CatalogResponse,
@@ -113,6 +114,13 @@ class HoodGrowClient:
         """
         self._base_url = base_url.rstrip("/")
         self._session = requests.Session()
+        # Identify the SDK on every request. Without it these calls arrive
+        # with requests' generic User-Agent and land in the API's
+        # unattributed bucket, indistinguishable from the crawlers and
+        # liveness probes that sweep the public endpoints — which is exactly
+        # the distinction its usage ledger exists to make. An integration
+        # built on this SDK is the signal; a probe is the noise.
+        self._session.headers["User-Agent"] = f"hoodgrow-py/{__version__}"
         self._signer = signer
         self._use_credits = bool(use_credits and signer is not None and not api_key)
         self._using_api_key = bool(api_key)
