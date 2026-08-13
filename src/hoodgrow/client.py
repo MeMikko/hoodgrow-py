@@ -83,10 +83,11 @@ class HoodGrowClient:
     ) -> None:
         """
         Args:
-            api_key: Bearer API key issued from HoodGrow's /admin/api-keys —
-                calls are free (no x402 payment) and unrate-limited beyond
-                the key's own configured limit. Takes priority over
-                ``signer`` if both are set.
+            api_key: Bearer API key issued by HoodGrow
+                (https://www.hoodgrow.com/api-access) — calls are free (no
+                x402 payment) and unrate-limited beyond the key's own
+                configured limit. Takes priority over ``signer`` if both
+                are set.
             signer: An ``eth_account`` ``LocalAccount`` (e.g. from
                 ``eth_account.Account.from_key``, or a KMS/HSM-backed
                 custom account) used to auto-pay per call via x402 — USDC
@@ -433,8 +434,9 @@ class HoodGrowClient:
         idempotency_key: str | None = None,
     ) -> OhlcResponse:
         """OHLC price candles for backtesting, bucketed from ~15-min price
-        snapshots. Deliberately OHLC, not OHLCV — HoodGrow has no historical
-        trading-volume time series to draw a volume field from. ``from_``/
+        snapshots. Each candle also carries per-candle ``volume_usd``/
+        ``swap_count`` from the on-chain swap-log indexer (``None`` for
+        buckets predating its deployment — see ``OhlcCandle``). ``from_``/
         ``to`` are ISO 8601 timestamps (default: the last 30 days); ``limit``
         caps how many candles to return (server default 500, max 1000).
         $0.05/call via x402, free with an API key. Raises
