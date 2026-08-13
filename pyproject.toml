@@ -4,10 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hoodgrow"
-version = "0.12.0"
+version = "0.13.0"
 description = "Python SDK for the HoodGrow Robinhood Chain (and Base B20) stock token API — live price, corporate-action adjusted supply, DeFi depth (Morpho/Uniswap), and corporate actions. Pay per call via x402 (USDC on Base) or a bearer API key."
 readme = "README.md"
-requires-python = ">=3.9"
+# 3.10 floor is real, not cautious: models.py builds runtime PEP 604 unions
+# (e.g. `Literal[...] | None` in an assignment), which `from __future__
+# import annotations` cannot rescue — on 3.9 `import hoodgrow` raises
+# TypeError at import time.
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "HoodGrow" }]
 keywords = [
@@ -28,10 +32,10 @@ classifiers = [
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Software Development :: Libraries :: Python Modules",
   "Topic :: Office/Business :: Financial",
 ]

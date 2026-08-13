@@ -11,4 +11,4 @@ reported 0.4.0 while shipping 0.7.1 because two copies of a version number
 had nothing holding them together.
 """
 
-__version__ = "0.12.0"
+__version__ = "0.13.0"

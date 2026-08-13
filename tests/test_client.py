@@ -851,3 +851,39 @@ def test_user_agent_can_be_overridden_by_an_embedder() -> None:
         api_key="test-key", user_agent="my-app/2.1 (hoodgrow-py/0.11.0)"
     )
     assert client._session.headers["User-Agent"] == "my-app/2.1 (hoodgrow-py/0.11.0)"
+
+
+@responses.activate
+def test_every_request_carries_the_default_timeout():
+    # requests waits FOREVER without a timeout, so a hung connection would
+    # block an agent loop indefinitely — the client must always send one.
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/tokens",
+        json={
+            "chainId": 4663,
+            "updatedAt": "2026-07-30T00:00:00.000Z",
+            "tokens": [],
+            "pendingCorporateActions": [],
+            "recentCorporateActions": [],
+        },
+        status=200,
+    )
+    client = HoodGrowClient(api_key="test-key-123")
+    client.get_catalog()
+    assert responses.calls[0].request.req_kwargs["timeout"] == hoodgrow.client.DEFAULT_TIMEOUT_S
+
+
+@responses.activate
+def test_timeout_is_overridable_and_reaches_the_bare_requests_paths():
+    # list_credit_bundles bypasses the session (plain requests.get), the
+    # historical spot where the timeout was silently missing.
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/credits/purchase",
+        json={"bundles": {}},
+        status=200,
+    )
+    client = HoodGrowClient(api_key="test-key-123", timeout=5.0)
+    client.list_credit_bundles()
+    assert responses.calls[0].request.req_kwargs["timeout"] == 5.0
