@@ -74,6 +74,7 @@ class HoodGrowClient:
         base_url: str = DEFAULT_BASE_URL,
         use_credits: bool = False,
         max_retries: int = 0,
+        user_agent: str | None = None,
     ) -> None:
         """
         Args:
@@ -89,6 +90,12 @@ class HoodGrowClient:
                 never hardcode a raw private key in source, load it from
                 an environment variable or secret manager, and only fund
                 the wallet with what you're willing to spend on this API.
+            user_agent: Replace the ``User-Agent`` this client sends
+                (default ``hoodgrow-py/<version>``). Set it when this SDK is
+                embedded in something the API should count separately —
+                otherwise that traffic is indistinguishable from a direct SDK
+                integration. Convention is to keep the SDK visible behind your
+                own name, e.g. ``my-app/2.1 (hoodgrow-py/0.11.0)``.
             base_url: Override the API base URL — for testing against a
                 non-production deployment. Defaults to
                 https://www.hoodgrow.com.
@@ -120,7 +127,7 @@ class HoodGrowClient:
         # liveness probes that sweep the public endpoints — which is exactly
         # the distinction its usage ledger exists to make. An integration
         # built on this SDK is the signal; a probe is the noise.
-        self._session.headers["User-Agent"] = f"hoodgrow-py/{__version__}"
+        self._session.headers["User-Agent"] = user_agent or f"hoodgrow-py/{__version__}"
         self._signer = signer
         self._use_credits = bool(use_credits and signer is not None and not api_key)
         self._using_api_key = bool(api_key)

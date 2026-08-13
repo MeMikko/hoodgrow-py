@@ -839,3 +839,15 @@ def test_client_identifies_itself_on_every_request() -> None:
     """
     client = HoodGrowClient(api_key="test-key")
     assert client._session.headers["User-Agent"] == f"hoodgrow-py/{hoodgrow.__version__}"
+
+
+def test_user_agent_can_be_overridden_by_an_embedder() -> None:
+    """An SDK wrapped inside another tool should be countable separately.
+
+    Without an override, a wrapper's traffic is indistinguishable from a
+    direct SDK integration, which defeats the point of identifying either.
+    """
+    client = HoodGrowClient(
+        api_key="test-key", user_agent="my-app/2.1 (hoodgrow-py/0.11.0)"
+    )
+    assert client._session.headers["User-Agent"] == "my-app/2.1 (hoodgrow-py/0.11.0)"
