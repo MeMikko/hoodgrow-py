@@ -25,6 +25,7 @@ from .models import (
     MarketsResponse,
     OhlcInterval,
     OhlcResponse,
+    PingResponse,
     SlippageResponse,
     SlippageSide,
     TokenDetailResponse,
@@ -245,6 +246,20 @@ class HoodGrowClient:
                 res.status_code,
                 body,
             )
+
+    def ping(self, idempotency_key: str | None = None) -> PingResponse:
+        """Prove the payment path works, for a tenth of a cent.
+
+        Carries no market data — it exists so a new x402 integration can
+        hit a real live 402, settle it, and get a 200 back before it risks
+        a $0.10 catalog call on an untested wallet, signer or facilitator
+        config. $0.001/call via x402, free with an API key.
+
+        Make this the first call from any new setup. Every other method is
+        the "then what" once this one returns ``ok=True``."""
+        return PingResponse.model_validate(
+            self._request("/api/agent/ping", idempotency_key=idempotency_key)
+        )
 
     def get_catalog(self, idempotency_key: str | None = None) -> CatalogResponse:
         """The full token catalog — every listed Robinhood Chain stock

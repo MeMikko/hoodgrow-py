@@ -88,6 +88,19 @@ class RecentCorporateAction(_HoodGrowModel):
     url: str
 
 
+class PingResponse(_HoodGrowModel):
+    """``GET /api/agent/ping`` — the payment-path smoke test.
+
+    Carries no market data on purpose; ``note`` points at the endpoints
+    that do."""
+
+    ok: bool
+    pong: bool
+    #: ISO timestamp the server answered at.
+    timestamp: str
+    note: str
+
+
 class CatalogResponse(_HoodGrowModel):
     """``GET /api/agent/tokens`` — the full catalog."""
 

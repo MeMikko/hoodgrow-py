@@ -96,6 +96,7 @@ Exactly one of `api_key` / `signer` is required.
 
 | Method | Price (x402) | Returns |
 | --- | --- | --- |
+| `ping()` | $0.001 | Nothing but `ok`/`pong` — a live 402 to prove your payment path works before spending real money on data |
 | `get_catalog()` | $0.10 | Every listed token: price, source, 24h change, corporate-action adjusted supply, DeFi depth, plus catalog-wide pending/recent corporate actions |
 | `get_token(symbol)` | $0.05 | One token, same fields, scoped |
 | `get_corporate_actions(symbol=None)` | uses `get_token`/`get_catalog` above | `CorporateActions(pending=..., recent=...)` — pass a symbol to scope, omit for every tracked token |

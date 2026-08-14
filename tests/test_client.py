@@ -887,3 +887,44 @@ def test_timeout_is_overridable_and_reaches_the_bare_requests_paths():
     client = HoodGrowClient(api_key="test-key-123", timeout=5.0)
     client.list_credit_bundles()
     assert responses.calls[0].request.req_kwargs["timeout"] == 5.0
+
+
+@responses.activate
+def test_ping_hits_the_cheap_smoke_test_endpoint():
+    # The whole point of ping is that a new integration can prove its
+    # wallet/signer/facilitator config against a real 402 for $0.001 instead
+    # of finding out during a $0.10 catalog call — so the URL is the
+    # assertion that matters here.
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/ping",
+        json={
+            "ok": True,
+            "pong": True,
+            "timestamp": "2026-08-14T00:00:00.000Z",
+            "note": "x402 test endpoint",
+        },
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123")
+    result = client.ping()
+
+    assert result.ok is True
+    assert result.pong is True
+    assert responses.calls[0].request.url == f"{BASE}/api/agent/ping"
+
+
+@responses.activate
+def test_ping_forwards_an_idempotency_key():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/ping",
+        json={"ok": True, "pong": True, "timestamp": "x", "note": "y"},
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123")
+    client.ping(idempotency_key="ping-key-1")
+
+    assert responses.calls[0].request.headers["Idempotency-Key"] == "ping-key-1"
