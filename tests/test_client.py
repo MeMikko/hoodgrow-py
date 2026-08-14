@@ -887,3 +887,73 @@ def test_timeout_is_overridable_and_reaches_the_bare_requests_paths():
     client = HoodGrowClient(api_key="test-key-123", timeout=5.0)
     client.list_credit_bundles()
     assert responses.calls[0].request.req_kwargs["timeout"] == 5.0
+
+
+@responses.activate
+def test_ping_hits_the_cheap_smoke_test_endpoint():
+    # The whole point of ping is that a new integration can prove its
+    # wallet/signer/facilitator config against a real 402 for $0.001 instead
+    # of finding out during a $0.10 catalog call — so the URL is the
+    # assertion that matters here.
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/ping",
+        json={
+            "ok": True,
+            "pong": True,
+            "timestamp": "2026-08-14T00:00:00.000Z",
+            "note": "x402 test endpoint",
+        },
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123")
+    result = client.ping()
+
+    assert result.ok is True
+    assert result.pong is True
+    assert responses.calls[0].request.url == f"{BASE}/api/agent/ping"
+
+
+@responses.activate
+def test_ping_forwards_an_idempotency_key():
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/ping",
+        json={"ok": True, "pong": True, "timestamp": "x", "note": "y"},
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123")
+    client.ping(idempotency_key="ping-key-1")
+
+    assert responses.calls[0].request.headers["Idempotency-Key"] == "ping-key-1"
+
+
+def test_usd_ceiling_converts_to_usdc_atomic_units_rounding_up():
+    # $0.10 must be at least 100000 atomic units. 0.1 * 1e6 in binary
+    # floating point is 100000.00000000001, so truncating would work here
+    # by luck and fail elsewhere — rounding up keeps an exactly-at-the-limit
+    # quote payable, which is the whole point of a ceiling.
+    from hoodgrow.client import _usd_to_usdc_atomic
+
+    assert _usd_to_usdc_atomic(0.10) == 100_000
+    assert _usd_to_usdc_atomic(0.05) == 50_000
+    assert _usd_to_usdc_atomic(0.001) == 1_000
+    assert _usd_to_usdc_atomic(200) == 200_000_000
+
+
+@responses.activate
+def test_max_price_usd_is_inert_on_the_bearer_path():
+    # A bearer key means no x402 at all, so a ceiling is accepted and
+    # ignored rather than raising — callers shouldn't have to strip it when
+    # they switch auth.
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/ping",
+        json={"ok": True, "pong": True, "timestamp": "x", "note": "y"},
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123", max_price_usd=0.1)
+    assert client.ping().ok is True

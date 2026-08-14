@@ -49,7 +49,7 @@ catalog = client.get_catalog()
 ```
 
 Get a key from HoodGrow directly — see
-[hoodgrow.com/api-access](https://www.hoodgrow.com/api-access).
+[docs.hoodgrow.com](https://docs.hoodgrow.com).
 
 ## Quick start — prepaid credits (cheaper than x402 per call, still no signup)
 
@@ -96,6 +96,7 @@ Exactly one of `api_key` / `signer` is required.
 
 | Method | Price (x402) | Returns |
 | --- | --- | --- |
+| `ping()` | $0.001 | Nothing but `ok`/`pong` — a live 402 to prove your payment path works before spending real money on data |
 | `get_catalog()` | $0.10 | Every listed token: price, source, 24h change, corporate-action adjusted supply, DeFi depth, plus catalog-wide pending/recent corporate actions |
 | `get_token(symbol)` | $0.05 | One token, same fields, scoped |
 | `get_corporate_actions(symbol=None)` | uses `get_token`/`get_catalog` above | `CorporateActions(pending=..., recent=...)` — pass a symbol to scope, omit for every tracked token |
@@ -250,7 +251,7 @@ client = HoodGrowClient(api_key=os.environ["HOODGROW_API_KEY"], max_retries=3)
 calls aren't idempotent, so the client never auto-retries a paid request.
 Need more sustained throughput? A persistent API key with its own higher
 limit is available — see
-[hoodgrow.com/api-access](https://www.hoodgrow.com/api-access).
+[docs.hoodgrow.com](https://docs.hoodgrow.com).
 
 ## Idempotent retries (paid calls)
 

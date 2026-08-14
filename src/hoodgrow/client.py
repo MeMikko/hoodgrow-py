@@ -1,7 +1,8 @@
-"""Client for the HoodGrow agent API (https://www.hoodgrow.com/api-access)."""
+"""Client for the HoodGrow agent API (https://docs.hoodgrow.com)."""
 
 from __future__ import annotations
 
+import math
 import time
 from typing import Any, Iterator
 from urllib.parse import quote
@@ -25,6 +26,7 @@ from .models import (
     MarketsResponse,
     OhlcInterval,
     OhlcResponse,
+    PingResponse,
     SlippageResponse,
     SlippageSide,
     TokenDetailResponse,
@@ -41,6 +43,17 @@ MAX_RETRY_DELAY_S = 30.0
 #: without this a hung connection blocks the calling agent loop forever —
 #: the exact failure mode an autonomous caller can't recover from.
 DEFAULT_TIMEOUT_S = 30.0
+#: USDC on Base has 6 decimals; x402 quotes amounts in atomic units.
+USDC_DECIMALS = 6
+
+
+def _usd_to_usdc_atomic(usd: float) -> int:
+    """A USD ceiling as USDC atomic units, rounded UP.
+
+    Rounding up on purpose: a ceiling of $0.10 must not reject a quote of
+    exactly $0.10 because of binary floating point, and erring a hundredth
+    of a cent high is harmless where erring low breaks legitimate calls."""
+    return math.ceil(usd * 10**USDC_DECIMALS)
 
 
 def _retry_after_seconds(header: str | None, attempt: int) -> float:
@@ -80,11 +93,12 @@ class HoodGrowClient:
         max_retries: int = 0,
         user_agent: str | None = None,
         timeout: float | None = DEFAULT_TIMEOUT_S,
+        max_price_usd: float | None = None,
     ) -> None:
         """
         Args:
-            api_key: Bearer API key issued by HoodGrow
-                (https://www.hoodgrow.com/api-access) — calls are free (no
+            api_key: Bearer API key, self-served at
+                https://www.hoodgrow.com/profile — calls are free (no
                 x402 payment) and unrate-limited beyond the key's own
                 configured limit. Takes priority over ``signer`` if both
                 are set.
@@ -124,6 +138,20 @@ class HoodGrowClient:
                 paths, because an x402 payment is not idempotent and a blind
                 retry after a paid call can pay twice. There, a ``429``
                 raises immediately.
+            max_price_usd: Refuse to pay more than this many US dollars
+                for any single call. Enforced as an x402 payment policy, so
+                an over-priced 402 is rejected *before* the signer produces
+                a signature — no payment is made and the call fails
+                instead. Without it this client pays whatever a 402 quotes,
+                which is fine against a known-good API and not fine if that
+                API is ever misconfigured or impersonated. No default,
+                deliberately: ``buy_credits`` legitimately pays $10–$200,
+                so a ceiling sized for the $0.05–$0.10 read endpoints would
+                silently break bundle purchases. It applies to credit
+                purchases too — a read-only agent might set ``0.1``, while
+                a client that also buys bundles needs it above the largest
+                bundle. Ignored on the ``api_key`` path, where no payment
+                happens at all.
             timeout: Per-request timeout in seconds, applied to every HTTP
                 call this client makes (connect + read). Defaults to
                 ``DEFAULT_TIMEOUT_S`` (30s). Pass ``None`` to disable and
@@ -160,6 +188,14 @@ class HoodGrowClient:
 
             x402_client = x402ClientSync()
             x402_client.register(NETWORK, ExactEvmScheme(signer))
+            if max_price_usd is not None:
+                # x402's own max_amount policy, not a hand-rolled one: it
+                # filters the 402's payment requirements before a signature
+                # is produced, so an over-priced quote leaves nothing
+                # acceptable to pay rather than being paid and regretted.
+                from x402.client_base import max_amount
+
+                x402_client.register_policy(max_amount(_usd_to_usdc_atomic(max_price_usd)))
             wrapRequestsWithPayment(self._session, x402_client)
         else:
             raise ValueError(
@@ -245,6 +281,20 @@ class HoodGrowClient:
                 res.status_code,
                 body,
             )
+
+    def ping(self, idempotency_key: str | None = None) -> PingResponse:
+        """Prove the payment path works, for a tenth of a cent.
+
+        Carries no market data — it exists so a new x402 integration can
+        hit a real live 402, settle it, and get a 200 back before it risks
+        a $0.10 catalog call on an untested wallet, signer or facilitator
+        config. $0.001/call via x402, free with an API key.
+
+        Make this the first call from any new setup. Every other method is
+        the "then what" once this one returns ``ok=True``."""
+        return PingResponse.model_validate(
+            self._request("/api/agent/ping", idempotency_key=idempotency_key)
+        )
 
     def get_catalog(self, idempotency_key: str | None = None) -> CatalogResponse:
         """The full token catalog — every listed Robinhood Chain stock
