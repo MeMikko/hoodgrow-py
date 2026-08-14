@@ -928,3 +928,32 @@ def test_ping_forwards_an_idempotency_key():
     client.ping(idempotency_key="ping-key-1")
 
     assert responses.calls[0].request.headers["Idempotency-Key"] == "ping-key-1"
+
+
+def test_usd_ceiling_converts_to_usdc_atomic_units_rounding_up():
+    # $0.10 must be at least 100000 atomic units. 0.1 * 1e6 in binary
+    # floating point is 100000.00000000001, so truncating would work here
+    # by luck and fail elsewhere — rounding up keeps an exactly-at-the-limit
+    # quote payable, which is the whole point of a ceiling.
+    from hoodgrow.client import _usd_to_usdc_atomic
+
+    assert _usd_to_usdc_atomic(0.10) == 100_000
+    assert _usd_to_usdc_atomic(0.05) == 50_000
+    assert _usd_to_usdc_atomic(0.001) == 1_000
+    assert _usd_to_usdc_atomic(200) == 200_000_000
+
+
+@responses.activate
+def test_max_price_usd_is_inert_on_the_bearer_path():
+    # A bearer key means no x402 at all, so a ceiling is accepted and
+    # ignored rather than raising — callers shouldn't have to strip it when
+    # they switch auth.
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/ping",
+        json={"ok": True, "pong": True, "timestamp": "x", "note": "y"},
+        status=200,
+    )
+
+    client = HoodGrowClient(api_key="test-key-123", max_price_usd=0.1)
+    assert client.ping().ok is True

@@ -49,7 +49,7 @@ catalog = client.get_catalog()
 ```
 
 Get a key from HoodGrow directly — see
-[hoodgrow.com/api-access](https://www.hoodgrow.com/api-access).
+[docs.hoodgrow.com](https://docs.hoodgrow.com).
 
 ## Quick start — prepaid credits (cheaper than x402 per call, still no signup)
 
@@ -251,7 +251,7 @@ client = HoodGrowClient(api_key=os.environ["HOODGROW_API_KEY"], max_retries=3)
 calls aren't idempotent, so the client never auto-retries a paid request.
 Need more sustained throughput? A persistent API key with its own higher
 limit is available — see
-[hoodgrow.com/api-access](https://www.hoodgrow.com/api-access).
+[docs.hoodgrow.com](https://docs.hoodgrow.com).
 
 ## Idempotent retries (paid calls)
 
