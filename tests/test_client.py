@@ -17,9 +17,79 @@ TEST_ACCOUNT = Account.from_key(
 )
 
 
-def test_constructor_requires_api_key_or_signer():
-    with pytest.raises(ValueError, match="requires either"):
-        HoodGrowClient()
+@responses.activate
+def test_client_with_no_credentials_works_and_sends_no_auth_header():
+    # It used to raise here. That made a key or a funded wallet a
+    # prerequisite for seeing any response at all — on an API whose catalog
+    # is free.
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/tokens",
+        json={
+            "chainId": 4663,
+            "updatedAt": "2026-08-19T00:00:00.000Z",
+            "tokens": [],
+            "pendingCorporateActions": [],
+            "recentCorporateActions": [],
+        },
+        status=200,
+    )
+    HoodGrowClient().get_catalog()
+    assert "Authorization" not in responses.calls[0].request.headers
+
+
+@responses.activate
+def test_catalog_parses_without_a_defi_field():
+    # `defi` was a REQUIRED model field with no default, so once the API
+    # stopped sending it this raised a pydantic ValidationError — the SDK
+    # did not merely mistype the shape, it refused to read it.
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/tokens",
+        json={
+            "chainId": 4663,
+            "updatedAt": "2026-08-19T00:00:00.000Z",
+            "tokens": [
+                {
+                    "symbol": "NVDA",
+                    "name": "NVIDIA Corporation",
+                    "address": "0x" + "0" * 40,
+                    "priceUsd": 225.145,
+                    "priceSource": "chainlink",
+                    "change24hPercent": 1.84,
+                    "supply": 18914.694,
+                    "supplyAdjusted": True,
+                    "snapshotTs": "2026-08-19T00:00:00.000Z",
+                }
+            ],
+            "pendingCorporateActions": [],
+            "recentCorporateActions": [],
+        },
+        status=200,
+    )
+    catalog = HoodGrowClient().get_catalog()
+    assert catalog.tokens[0].symbol == "NVDA"
+    assert not hasattr(catalog.tokens[0], "defi")
+
+
+@responses.activate
+def test_402_without_a_signer_surfaces_the_servers_guidance():
+    # With no signer there is nothing to settle a 402 with, so it must
+    # arrive as an error the caller can read — the body names the free key
+    # and the per-IP allowance, which is the whole point of that response.
+    responses.add(
+        responses.GET,
+        f"{BASE}/api/agent/token/NVDA",
+        json={
+            "accepts": [{"price": "$0.05"}],
+            "freeApiKey": {"url": "https://www.hoodgrow.com/profile"},
+        },
+        status=402,
+    )
+    with pytest.raises(HoodGrowError) as excinfo:
+        HoodGrowClient().get_token("NVDA")
+    assert excinfo.value.status == 402
+    assert excinfo.value.body["freeApiKey"]["url"] == "https://www.hoodgrow.com/profile"
 
 
 @responses.activate
