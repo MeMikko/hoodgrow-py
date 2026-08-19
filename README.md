@@ -30,7 +30,7 @@ signer = Account.from_key(os.environ["AGENT_PRIVATE_KEY"])
 
 client = HoodGrowClient(signer=signer)
 
-catalog = client.get_catalog()   # $0.10 — every token
+catalog = client.get_catalog()   # free — every token
 nvda = client.get_token("NVDA")  # $0.05 — one token
 ```
 
@@ -70,7 +70,7 @@ paying_client.buy_credits("50")  # pay $50, receive $60 of credit
 
 # From then on: spend the balance instead of paying x402 per call.
 client = HoodGrowClient(signer=signer, use_credits=True)
-catalog = client.get_catalog()  # debits $0.10 from the balance, no on-chain tx
+token = client.get_token("NVDA")  # debits $0.05 from the balance, no on-chain tx
 
 balance = client.get_credit_balance()  # free, doesn't spend anything
 ```
@@ -92,13 +92,13 @@ HoodGrowClient(
 )
 ```
 
-Exactly one of `api_key` / `signer` is required.
+Both are optional. With neither, `get_catalog()` still works — it is free — and every other method serves an anonymous per-IP daily allowance before returning a 402.
 
 | Method | Price (x402) | Returns |
 | --- | --- | --- |
 | `ping()` | $0.001 | Nothing but `ok`/`pong` — a live 402 to prove your payment path works before spending real money on data |
-| `get_catalog()` | $0.10 | Every listed token: price, source, 24h change, corporate-action adjusted supply, DeFi depth, plus catalog-wide pending/recent corporate actions |
-| `get_token(symbol)` | $0.05 | One token, same fields, scoped |
+| `get_catalog()` | **free** | Every listed token: symbol, name, address, price, source, 24h change, corporate-action adjusted supply, plus catalog-wide pending/recent corporate actions. No per-token DeFi — see `get_token()` / `get_defi()` |
+| `get_token(symbol)` | $0.05 | One token, same fields, plus its DeFi depth |
 | `get_corporate_actions(symbol=None)` | uses `get_token`/`get_catalog` above | `CorporateActions(pending=..., recent=...)` — pass a symbol to scope, omit for every tracked token |
 | `get_corporate_actions_feed(symbol=None, contract=None, status=None, from_=None, to=None, limit=None, cursor=None)` | $0.05 | One page of the filterable, cursor-paginated corporate-actions **event log** — the cross-symbol append-only feed with detection metadata (block, tx hash, `detected_at`), distinct from the pending/recent bundle above |
 | `iterate_corporate_actions(symbol=None, contract=None, status=None, from_=None, to=None, limit=None)` | $0.05 / page | Generator over **every** event matching the filter, auto-following `next_cursor` — `for a in client.iterate_corporate_actions(status="staged"): ...`. Each page is a separate billed call on x402/credit; narrow with `from_`/`to`/`symbol` |
@@ -229,7 +229,7 @@ out request can pay twice. Before pointing a signer at this client:
   `Account.from_key(...)`) that can sign locally.
 - HoodGrow's paywall only ever asks for USDC (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`)
   on Base mainnet (`eip155:8453`), paid to
-  `0x8520B3693a2Cf3c2bEa3a505Af3A9c1b093954c7`, capped at $0.10/call — this
+  `0x8520B3693a2Cf3c2bEa3a505Af3A9c1b093954c7`, capped at $0.05/call — this
   client's underlying `x402` dependency handles the protocol-level
   verification, but you're responsible for how much you fund the signing
   wallet with.

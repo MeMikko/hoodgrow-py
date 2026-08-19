@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hoodgrow"
-version = "0.14.0"
+version = "0.15.0"
 description = "Python SDK for the HoodGrow Robinhood Chain (and Base B20) stock token API — live price, corporate-action adjusted supply, DeFi depth (Morpho/Uniswap), and corporate actions. Pay per call via x402 (USDC on Base) or a bearer API key."
 readme = "README.md"
 # 3.10 floor is real, not cautious: models.py builds runtime PEP 604 unions

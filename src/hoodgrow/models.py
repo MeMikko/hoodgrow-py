@@ -35,8 +35,19 @@ class DefiInfo(_HoodGrowModel):
     uniswap_pool_count: int = Field(0, alias="uniswapPoolCount")
 
 
-class TokenSummary(_HoodGrowModel):
-    """One token's price/supply data, as it appears in a catalog response."""
+class CatalogToken(_HoodGrowModel):
+    """One token's identity, price and supply — the shape the FREE catalog
+    returns, and the shape ``TokenDetailResponse.token`` has always had.
+
+    No ``defi`` field. The catalog used to carry one per token and no longer
+    does: per-token DeFi depth moved to :meth:`HoodGrowClient.get_defi` when
+    the catalog became free, and :meth:`HoodGrowClient.get_token` still
+    returns a ``defi`` block alongside its ``token``.
+
+    This was a REQUIRED field with no default, so once the API stopped
+    sending it, parsing a catalog response raised a pydantic
+    ``ValidationError`` — the SDK did not merely mistype the shape, it
+    refused to read it."""
 
     symbol: str
     name: str
@@ -50,7 +61,12 @@ class TokenSummary(_HoodGrowModel):
     #: True when ``supply`` reflects the ERC-8056 uiMultiplier adjustment.
     supply_adjusted: bool = Field(False, alias="supplyAdjusted")
     snapshot_ts: str | None = Field(None, alias="snapshotTs")
-    defi: DefiInfo
+
+
+#: .. deprecated:: 0.15.0
+#:    Renamed to :class:`CatalogToken`, and its ``defi`` field is gone —
+#:    the free catalog does not return one.
+TokenSummary = CatalogToken
 
 
 class PendingCorporateAction(_HoodGrowModel):
@@ -106,7 +122,7 @@ class CatalogResponse(_HoodGrowModel):
 
     chain_id: int = Field(alias="chainId")
     updated_at: str = Field(alias="updatedAt")
-    tokens: list[TokenSummary]
+    tokens: list[CatalogToken]
     pending_corporate_actions: list[PendingCorporateAction] = Field(
         alias="pendingCorporateActions"
     )
@@ -115,28 +131,17 @@ class CatalogResponse(_HoodGrowModel):
     )
 
 
-class TokenDetail(_HoodGrowModel):
-    """The ``token`` object inside :class:`TokenDetailResponse` — same
-    fields as :class:`TokenSummary` minus ``defi``, which sits alongside
-    it instead (see :class:`TokenDetailResponse`)."""
-
-    symbol: str
-    name: str
-    address: str
-    price_usd: float | None = Field(None, alias="priceUsd")
-    price_source: PriceSource = Field(None, alias="priceSource")
-    change_24h_percent: float | None = Field(None, alias="change24hPercent")
-    supply: float | None = None
-    supply_adjusted: bool = Field(False, alias="supplyAdjusted")
-    snapshot_ts: str | None = Field(None, alias="snapshotTs")
+#: The ``token`` object inside :class:`TokenDetailResponse`. Identical to
+#: :class:`CatalogToken` — it was a separate class only to express "the
+#: catalog shape minus ``defi``", and the catalog shape no longer has one.
+TokenDetail = CatalogToken
 
 
 class TokenDetailResponse(_HoodGrowModel):
-    """``GET /api/agent/token/{symbol}`` — one token. Note ``defi`` sits
-    alongside ``token``, not nested inside it (unlike
-    :class:`CatalogResponse`, where each catalog entry carries its own
-    ``defi``) — this mirrors the live API exactly rather than normalizing
-    the two shapes to match."""
+    """``GET /api/agent/token/{symbol}`` — one token, with its DeFi depth.
+    ``defi`` sits alongside ``token`` rather than inside it, mirroring the
+    live API. This is the endpoint that carries DeFi at all: the free
+    catalog does not."""
 
     chain_id: int = Field(alias="chainId")
     updated_at: str = Field(alias="updatedAt")

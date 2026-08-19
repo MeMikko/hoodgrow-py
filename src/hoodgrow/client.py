@@ -50,8 +50,8 @@ USDC_DECIMALS = 6
 def _usd_to_usdc_atomic(usd: float) -> int:
     """A USD ceiling as USDC atomic units, rounded UP.
 
-    Rounding up on purpose: a ceiling of $0.10 must not reject a quote of
-    exactly $0.10 because of binary floating point, and erring a hundredth
+    Rounding up on purpose: a ceiling of $0.05 must not reject a quote of
+    exactly $0.05 because of binary floating point, and erring a hundredth
     of a cent high is harmless where erring low breaks legitimate calls."""
     return math.ceil(usd * 10**USDC_DECIMALS)
 
@@ -105,7 +105,9 @@ class HoodGrowClient:
             signer: An ``eth_account`` ``LocalAccount`` (e.g. from
                 ``eth_account.Account.from_key``, or a KMS/HSM-backed
                 custom account) used to auto-pay per call via x402 — USDC
-                on Base, $0.10 for the full catalog, $0.05 for a single
+                on Base, $0.05 for a single token and every other data
+                endpoint (the full catalog is free and needs no signer at
+                all)
                 token. Every payment this client makes is real money;
                 never hardcode a raw private key in source, load it from
                 an environment variable or secret manager, and only fund
@@ -146,7 +148,7 @@ class HoodGrowClient:
                 which is fine against a known-good API and not fine if that
                 API is ever misconfigured or impersonated. No default,
                 deliberately: ``buy_credits`` legitimately pays $10–$200,
-                so a ceiling sized for the $0.05–$0.10 read endpoints would
+                so a ceiling sized for the $0.05 read endpoints would
                 silently break bundle purchases. It applies to credit
                 purchases too — a read-only agent might set ``0.1``, while
                 a client that also buys bundles needs it above the largest
@@ -197,11 +199,14 @@ class HoodGrowClient:
 
                 x402_client.register_policy(max_amount(_usd_to_usdc_atomic(max_price_usd)))
             wrapRequestsWithPayment(self._session, x402_client)
-        else:
-            raise ValueError(
-                "HoodGrowClient requires either `api_key` or `signer` — "
-                "see https://github.com/MeMikko/hoodgrow-py#readme"
-            )
+        # No credentials: a plain session, no Authorization header, no
+        # payment wrapper. The free catalog returns 200; the paid endpoints
+        # return 200 until the anonymous per-IP allowance runs out and 402
+        # after that. There is no signer to settle with, so a 402 surfaces as
+        # a HoodGrowError carrying the server's guidance rather than being
+        # paid. This used to raise, which made a key or a funded wallet a
+        # prerequisite for seeing any response at all — on an API whose
+        # catalog is free.
 
     def _sign_credit_auth_headers(self, method: str, path: str) -> dict[str, str]:
         """Off-chain wallet-signature auth for a credit-funded call —
@@ -287,7 +292,7 @@ class HoodGrowClient:
 
         Carries no market data — it exists so a new x402 integration can
         hit a real live 402, settle it, and get a 200 back before it risks
-        a $0.10 catalog call on an untested wallet, signer or facilitator
+        a real call on an untested wallet, signer or facilitator
         config. $0.001/call via x402, free with an API key.
 
         Make this the first call from any new setup. Every other method is
@@ -298,8 +303,12 @@ class HoodGrowClient:
 
     def get_catalog(self, idempotency_key: str | None = None) -> CatalogResponse:
         """The full token catalog — every listed Robinhood Chain stock
-        token, with price, corporate-action adjusted supply, and DeFi
-        depth. $0.10/call via x402, free with an API key.
+        token, with its identity, price, 24h change and corporate-action
+        adjusted supply, plus both corporate-action feeds.
+
+        FREE. No key, no payment, no allowance spent — this works on a
+        client constructed with no arguments at all. It carries no
+        per-token DeFi depth: use :meth:`get_token` or :meth:`get_defi`.
 
         Pass ``idempotency_key`` (any unique, stable string) to safely retry
         a timed-out PAID call: the server replays the first stored response
@@ -312,7 +321,8 @@ class HoodGrowClient:
         self, symbol: str, idempotency_key: str | None = None
     ) -> TokenDetailResponse:
         """One token by symbol, e.g. "NVDA" — same fields as a catalog
-        entry, cheaper than fetching the whole catalog for a spot check.
+        entry PLUS that token's ``defi`` block, which the free catalog does
+        not carry.
         $0.05/call via x402, free with an API key. Raises
         :class:`HoodGrowError` (status 404) for an unknown symbol.
         ``idempotency_key`` makes a timed-out paid call safe to retry."""
